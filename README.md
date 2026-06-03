@@ -1,4 +1,17 @@
-# coder-nixos
+<!-- markdownlint-disable MD041 -->
+<div align="center">
+  <a href="https://coder.com#gh-light-mode-only">
+    <img src="https://github.com/coder/coder/blob/main/docs/images/logo-black.png" alt="Coder Logo Light" style="width: 128px">
+  </a>
+  <a href="https://coder.com#gh-dark-mode-only">
+    <img src="https://github.com/coder/coder/blob/main/docs/images/logo-white.png" alt="Coder Logo Dark" style="width: 128px">
+  </a>
+
+  <h1>
+  The Box™
+  </h1>
+
+</div>
 
 NixOS configuration for Coder demo and workshop boxes.
 
