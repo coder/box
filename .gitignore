@@ -1,0 +1,5 @@
+local.nix
+hosts/*/local.nix
+*.tfstate*
+.terraform/
+*.bak
