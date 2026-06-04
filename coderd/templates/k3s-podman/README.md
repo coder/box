@@ -2,7 +2,7 @@
 display_name: Kubernetes + Podman (Docker-compatible socket)
 description: Workspace pods share the host's rootless Podman socket — no privileged mode, no daemon.
 icon: /icon/docker.svg
-maintainer_github: bpmct
+maintainer_github: coder
 verified: false
 tags: [kubernetes, docker, podman, k3s]
 ---
