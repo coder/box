@@ -75,8 +75,8 @@ Two community tools do the heavy lifting:
 From a NixOS live USB on the target box, with network access (any reasonably recent ISO from [nixos.org](https://nixos.org/download/) works; the installed system pins its own nixpkgs in `flake.lock` independent of what the USB is running):
 
 ```sh
-nix-shell -p git --run "git clone https://github.com/bpmct/coder-nixos /tmp/coder-nixos"
-cd /tmp/coder-nixos
+nix-shell -p git --run "git clone https://github.com/coder/box /tmp/box"
+cd /tmp/box
 sudo ./nixos/install.sh
 ```
 

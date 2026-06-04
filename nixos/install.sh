@@ -6,8 +6,8 @@
 #
 # Usage from a NixOS live USB:
 #
-#   nix-shell -p git --run "git clone https://github.com/bpmct/coder-nixos /tmp/coder-nixos"
-#   cd /tmp/coder-nixos
+#   nix-shell -p git --run "git clone https://github.com/coder/box /tmp/box"
+#   cd /tmp/box
 #   sudo ./nixos/install.sh                  # interactive disk picker, defaults for the rest
 #   sudo ./nixos/install.sh --disk /dev/sda --yes
 #

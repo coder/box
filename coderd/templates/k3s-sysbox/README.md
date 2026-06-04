@@ -2,7 +2,7 @@
 display_name: Kubernetes + Sysbox (Docker-in-Workspace)
 description: Full Docker-in-workspace via sysbox-runc — no privileged mode required.
 icon: /icon/docker.svg
-maintainer_github: bpmct
+maintainer_github: coder
 verified: false
 tags: [kubernetes, docker, sysbox, k3s]
 ---
