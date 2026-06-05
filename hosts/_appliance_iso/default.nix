@@ -22,8 +22,7 @@
   imports = [ ../../nixos/live-iso.nix ]
     ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
-  # flake.nix defaults networking.hostName to the folder name, but
-  # "_appliance_iso" is not a valid hostname (must start with an alphanumeric;
-  # underscores are only allowed mid-name). Use a valid appliance hostname.
-  networking.hostName = lib.mkForce "appliance-iso";
+  # No networking.hostName here on purpose: underscore-prefixed image hosts get
+  # no folder-name injection from flake.nix and inherit the central default
+  # "coder-box" (configuration.nix). Override in local.nix if you need another.
 }

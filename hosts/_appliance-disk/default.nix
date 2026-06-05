@@ -30,10 +30,9 @@
     ../../nixos/box-turnkey.nix      # shared turn-key config (login + Coder bootstrap)
   ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
-  # flake.nix defaults networking.hostName to the folder name, but
-  # "_appliance-disk" is not a valid hostname (must start with an alphanumeric).
-  # Use a valid appliance hostname.
-  networking.hostName = lib.mkForce "appliance-disk";
+  # No networking.hostName here on purpose: underscore-prefixed image hosts get
+  # no folder-name injection from flake.nix and inherit the central default
+  # "coder-box" (configuration.nix). Override in local.nix if you need another.
 
   # disko writes the image for this device node; /dev/vda is the virtio disk a
   # built image is partitioned against. The on-disk filesystems mount by LABEL

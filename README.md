@@ -67,10 +67,15 @@ coderd/
 
 This repo is a Nix flake. `flake.nix` auto-discovers every subdirectory of
 `./hosts/` that contains a `default.nix` and exposes it as
-`nixosConfigurations.<folder-name>`. The folder name is the hostname, so
-`nixos-rebuild switch --flake .` auto-selects the right config on the
-running box. Adding a new host means creating a host folder, no flake.nix
-edit. The installer does this for you.
+`nixosConfigurations.<folder-name>`. For normal install hosts the folder name
+is also the hostname, so `nixos-rebuild switch --flake .` auto-selects the
+right config on the running box. Adding a new host means creating a host
+folder, no flake.nix edit. The installer does this for you.
+
+Hosts whose folder name starts with an underscore (`_appliance_iso`,
+`_appliance-disk`) are image/appliance builds, not per-machine installs: they
+do **not** get the folder-name hostname and instead inherit the central
+default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 
 Two community tools do the heavy lifting:
 

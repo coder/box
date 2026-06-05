@@ -106,9 +106,19 @@ in
     zramSwap.enable = lib.mkDefault true;
 
     # ── Networking ────────────────────────────────────────────────────────────
-    # networking.hostName is set by flake.nix's mkHost to the host folder
-    # name; per-host modules can override with lib.mkForce in
-    # hosts/<host>/local.nix or default.nix.
+    # Central default hostname. Install hosts override this: flake.nix's mkHost
+    # injects `networking.hostName = lib.mkDefault <folder-name>` for every
+    # non-underscore host (so coder-thinkcentre stays coder-thinkcentre, etc.).
+    # Underscore-prefixed image/appliance hosts (_appliance_iso, _appliance-disk)
+    # get no injection and so inherit "coder-box".
+    #
+    # Priority 1250 (mkOverride) is deliberately BETWEEN mkDefault (1000) and
+    # mkOptionDefault (1500): it beats the option's own built-in default
+    # ("nixos", which nixpkgs sets at mkOptionDefault and would otherwise tie
+    # and error), while still losing to flake.nix's mkDefault folder-name
+    # injection on install hosts. A host's local.nix/default.nix can override at
+    # normal (100) priority or mkForce.
+    networking.hostName = lib.mkOverride 1250 "coder-box";
     networking.networkmanager.enable = true;
 
     # mDNS: every box reachable as <hostname>.local on the LAN
