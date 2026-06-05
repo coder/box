@@ -64,6 +64,10 @@ cp /etc/nixos-repo/hosts/incus-vm/incus-vm.nix \
 
 # For a bare-metal host — start from a different base or write your own default.nix.
 # See hosts/qemu-arm64/ for an example of the bare-metal layout.
+
+# Stage the new host dir so the flake can discover it.
+# The flake uses builtins.readDir on the git tree, so untracked files are invisible.
+git -C /etc/nixos-repo add hosts/$HOSTNAME/
 ```
 
 ### 3. Write the runtime config files
