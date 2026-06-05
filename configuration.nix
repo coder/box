@@ -49,7 +49,7 @@ in
     ./nixos/screenconnect.nix  # optional ScreenConnect client (enable in hosts/<host>/local.nix)
   ];
 
-  # ── NixOS option: SSH key sync ─────────────────────────────────────────────
+  # ── NixOS option: SSH key sync ───────────────────────────────────────────────
   # Set in hosts/<host>/local.nix: services.coder-sync-ssh-keys.githubUsers = [ "user1" ];
   options.services.coder-nixos.lanIp = lib.mkOption {
     type        = lib.types.str;
@@ -65,7 +65,7 @@ in
 
   config = {
 
-    # ── Platform ──────────────────────────────────────────────────────────────
+    # ── Platform ────────────────────────────────────────────────────────────────
     # Fallback architecture. Since flake.nix no longer hardcodes `system` in
     # lib.nixosSystem, something must set nixpkgs.hostPlatform. The facter
     # module (nixos/modules/hardware/facter/system.nix) and any host's
@@ -79,7 +79,7 @@ in
     # in hosts/<host>/default.nix (or local.nix).
     nixpkgs.hostPlatform = lib.mkOptionDefault "x86_64-linux";
 
-    # ── Terraform: prebuilt binary, not from source ───────────────────────────
+    # ── Terraform: prebuilt binary, not from source ──────────────────────────────────
     # Terraform is BSL-licensed, so cache.nixos.org does not distribute it and
     # `pkgs.terraform` would compile the multi-GB Go project from source during
     # `nixos-install`. On the small live-USB build environment that exhausts the
@@ -105,7 +105,7 @@ in
     # compressed in-RAM swap device instead, sized to half of RAM.
     zramSwap.enable = lib.mkDefault true;
 
-    # ── Networking ────────────────────────────────────────────────────────────
+    # ── Networking ──────────────────────────────────────────────────────────────
     # networking.hostName is set by flake.nix's mkHost to the host folder
     # name; per-host modules can override with lib.mkForce in
     # hosts/<host>/local.nix or default.nix.
@@ -118,7 +118,7 @@ in
       publish  = { enable = true; addresses = true; workstation = true; };
     };
 
-    # ── Locale / time ─────────────────────────────────────────────────────────
+    # ── Locale / time ─────────────────────────────────────────────────────────────
     time.timeZone = "America/Chicago";
     i18n.defaultLocale = "en_US.UTF-8";
     i18n.extraLocaleSettings = {
@@ -133,7 +133,7 @@ in
       LC_TIME           = "en_US.UTF-8";
     };
 
-    # ── Desktop: KDE Plasma 6 ─────────────────────────────────────────────────
+    # ── Desktop: KDE Plasma 6 ───────────────────────────────────────────────────
     services.xserver.enable = true;
     services.displayManager.sddm.enable = true;
     services.displayManager.sddm.wayland.enable = false;
@@ -141,7 +141,7 @@ in
     services.desktopManager.plasma6.enable = true;
     services.xserver.xkb = { layout = "us"; variant = ""; };
 
-    # ── Audio ─────────────────────────────────────────────────────────────────
+    # ── Audio ──────────────────────────────────────────────────────────────────
     services.pulseaudio.enable = false;
     security.rtkit.enable = true;
     services.pipewire = {
@@ -153,14 +153,14 @@ in
 
     services.printing.enable = true;
 
-    # ── Users ─────────────────────────────────────────────────────────────────
+    # ── Users ───────────────────────────────────────────────────────────────────
     # Desktop / SSH login user is declared per-host in local.nix (template
     # in local.nix.example); username and password are install-time flags.
     # The `coder` system user (uid 991) is shared and declared further down.
 
     security.sudo.wheelNeedsPassword = false;
 
-    # ── SSH ───────────────────────────────────────────────────────────────────
+    # ── SSH ───────────────────────────────────────────────────────────────────────
     services.openssh = {
       enable = true;
       settings.PasswordAuthentication = true;
@@ -170,7 +170,7 @@ in
       '';
     };
 
-    # ── SSH key sync from GitHub usernames ────────────────────────────────────
+    # ── SSH key sync from GitHub usernames ──────────────────────────────────────
     # Fetches https://github.com/<user>.keys for each username in
     # services.coder-sync-ssh-keys.githubUsers (set in hosts/<host>/local.nix).
     # Writes keys to /etc/ssh/authorized_keys.d/<user>. Runs at boot.
@@ -215,7 +215,7 @@ in
       };
     };
 
-    # ── Packages ──────────────────────────────────────────────────────────────
+    # ── Packages ────────────────────────────────────────────────────────────────
     programs.firefox.enable = true;
     nixpkgs.config.allowUnfree = true;
 
@@ -227,7 +227,7 @@ in
     nix.settings.download-buffer-size = 268435456;  # 256 MiB; quiets the "buffer full" warning on big closure pulls
     networking.firewall.enable = false;
 
-    # ── PostgreSQL ────────────────────────────────────────────────────────────
+    # ── PostgreSQL ────────────────────────────────────────────────────────────────
     services.postgresql = {
       enable  = true;
       package = pkgs.postgresql;
@@ -241,7 +241,7 @@ in
       '';
     };
 
-    # ── Rootless Podman ───────────────────────────────────────────────────────
+    # ── Rootless Podman ─────────────────────────────────────────────────────────
     # Used by Coder workspace templates via the Docker-compatible socket API.
     # dockerCompat installs a `docker` shim that redirects to podman so
     # workspace tooling that hard-codes `docker` (the coder-cli template, host
@@ -258,7 +258,7 @@ in
     # actually has k3s running; hosts can opt out from their local.nix.
     services.coder-nixos.k3s-sysbox.enable = lib.mkDefault true;
 
-    # ── Coder user ────────────────────────────────────────────────────────────
+    # ── Coder user ──────────────────────────────────────────────────────────────
     # UID 991 is below 1000 so isSystemUser is required (isNormalUser rejects it).
     # linger = true ensures the user session (and Podman socket) starts at boot.
     users.users.coder = {
@@ -289,7 +289,7 @@ in
       "z /etc/coder/session-token 0600 coder coder -"
     ];
 
-    # ── Coder server ──────────────────────────────────────────────────────────
+    # ── Coder server ──────────────────────────────────────────────────────────────
     # Base env vars live here. Secrets (admin creds, OAuth, etc.) are merged in
     # via systemd.services.coder.environment in hosts/<host>/local.nix; no EnvironmentFile.
     systemd.services.coder = {
@@ -329,7 +329,7 @@ in
       };
     };
 
-    # ── Admin user bootstrap ──────────────────────────────────────────────────
+    # ── Admin user bootstrap ──────────────────────────────────────────────────────
     # Reads CODER_ADMIN_* from coder.service environment (set via local.nix).
     # Creates a local admin account once; sentinel prevents re-running.
     # If CODER_ADMIN_EMAIL is unset, skips and directs user to the browser wizard.
@@ -360,7 +360,7 @@ in
 
           if [ -z "''${CODER_ADMIN_EMAIL:-}" ]; then
             echo "CODER_ADMIN_EMAIL not set, skipping bootstrap."
-            echo "Complete the first-run wizard at http://$(hostname -s).local:3000"
+            echo "Complete the first-run wizard at http://$(${pkgs.nettools}/bin/hostname -s).local:3000"
             exit 0
           fi
 
@@ -454,7 +454,7 @@ in
     };
 
 
-    # ── Coder reset (on-demand) ───────────────────────────────────────────────
+    # ── Coder reset (on-demand) ────────────────────────────────────────────────────
     # Tears down all workspace pods/PVCs, wipes the Coder DB and data dir,
     # re-bootstraps the admin user, mints a fresh session token, and runs
     # nixos-rebuild switch to push templates back to Coder — fully automated.
@@ -515,8 +515,13 @@ in
 
           # 8. Mint a fresh long-lived session token using the admin creds from local.nix
           echo "--- minting session token"
-          SESSION=$(${pkgs.curl}/bin/curl -sf             -X POST http://localhost:3000/api/v2/users/login             -H 'Content-Type: application/json'             -d "{"email":"''${CODER_ADMIN_EMAIL}","password":"''${CODER_ADMIN_PASSWORD}"}"             | ${pkgs.jq}/bin/jq -r '.session_token')
-          LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION"             ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
+          SESSION=$(${pkgs.curl}/bin/curl -sf \
+            -X POST http://localhost:3000/api/v2/users/login \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"''${CODER_ADMIN_EMAIL}\",\"password\":\"''${CODER_ADMIN_PASSWORD}\"}" \
+            | ${pkgs.jq}/bin/jq -r '.session_token')
+          LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION" \
+            ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
           echo "$LONG_TOKEN" | ${pkgs.coreutils}/bin/tee /etc/coder/session-token > /dev/null
           echo "--- session token written"
 
@@ -536,7 +541,7 @@ in
       };
     };
 
-    # ── Template sync activation script ──────────────────────────────────────
+    # ── Template sync activation script ────────────────────────────────────────────
     # Runs on every `nixos-rebuild switch`. Uses terraform-provider-coderd to
     # apply templates from /etc/nixos-repo/coderd/.
     # /etc/coder/session-token is populated automatically by
@@ -554,6 +559,7 @@ in
           echo "  This file is auto-populated by coder-init-admin.service on first boot."
         else
           mkdir -p "$STATE_DIR"
+          chown coder:coder "$STATE_DIR" 2>/dev/null || true
 
           COMMIT=$(GIT_DIR=/etc/nixos-repo/.git ${pkgs.git}/bin/git -c safe.directory=/etc/nixos-repo -C /etc/nixos-repo rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -579,7 +585,7 @@ in
     # ./hosts/coder-thinkcentre/default.nix.
 
 
-    # ── Coder tunnel redirect ─────────────────────────────────────────────────
+    # ── Coder tunnel redirect ──────────────────────────────────────────────────────
     # Listens on port 80 (http://coder-thinkcentre.local) and issues a 302
     # redirect to the live *.try.coder.app tunnel URL, which Coder sets when
     # CODER_ACCESS_URL is left unset.  The shell wrapper discovers the URL and
@@ -660,7 +666,7 @@ EOF
     };
 
 
-    # ── Workspace reaper ──────────────────────────────────────────────────────────
+    # ── Workspace reaper ────────────────────────────────────────────────────────────────
     # Deletes workspaces that have been stopped for >= 72 h.
     # time_til_dormant_autodelete_ms is Enterprise-only so we implement this
     # ourselves: an hourly timer calls the API, finds stopped workspaces whose
@@ -688,7 +694,10 @@ EOF
 
           echo "coder-workspace-reaper: checking for workspaces stopped before $(${pkgs.coreutils}/bin/date -d @$CUTOFF --iso-8601=seconds)"
 
-          WORKSPACES=$(${pkgs.curl}/bin/curl -sf             -H "Coder-Session-Token: $TOKEN"             "$CODER_LOCAL/api/v2/workspaces?limit=100&filterQuery=status:stopped"             | ${pkgs.jq}/bin/jq -r '.workspaces[] | .id + " " + .name + " " + .last_used_at')
+          WORKSPACES=$(${pkgs.curl}/bin/curl -sf \
+            -H "Coder-Session-Token: $TOKEN" \
+            "$CODER_LOCAL/api/v2/workspaces?limit=100&filterQuery=status:stopped" \
+            | ${pkgs.jq}/bin/jq -r '.workspaces[] | .id + " " + .name + " " + .last_used_at')
 
           if [ -z "$WORKSPACES" ]; then
             echo "coder-workspace-reaper: no stopped workspaces found"
@@ -700,7 +709,10 @@ EOF
             LAST_EPOCH=$(${pkgs.coreutils}/bin/date -d "$last_used" +%s 2>/dev/null || echo 0)
             if [ "$LAST_EPOCH" -lt "$CUTOFF" ]; then
               echo "coder-workspace-reaper: deleting $name ($id) — last used $last_used"
-              ${pkgs.curl}/bin/curl -sf -X DELETE                 -H "Coder-Session-Token: $TOKEN"                 "$CODER_LOCAL/api/v2/workspaces/$id" ||                 echo "coder-workspace-reaper: WARNING — delete failed for $name"
+              ${pkgs.curl}/bin/curl -sf -X DELETE \
+                -H "Coder-Session-Token: $TOKEN" \
+                "$CODER_LOCAL/api/v2/workspaces/$id" || \
+                echo "coder-workspace-reaper: WARNING — delete failed for $name"
             else
               echo "coder-workspace-reaper: keeping $name — stopped recently"
             fi
@@ -721,7 +733,7 @@ EOF
     };
 
 
-    # ── coder-logstream-kube Helm install ─────────────────────────────────────
+    # ── coder-logstream-kube Helm install ─────────────────────────────────────────────
     # Streams k3s pod events (scheduling, image pull, OOMKill, etc.) into
     # Coder workspace startup logs. Runs helm upgrade --install on every boot
     # so the chart is kept up to date after NixOS rebuilds.
