@@ -25,7 +25,7 @@ let
   # See pkgs/sysbox-runc.nix for build details and update instructions.
   sysboxRunc = pkgs.callPackage ../pkgs/sysbox-runc.nix {};
 
-  # ── Sysbox v0.6.7 CE — sysbox-mgr and sysbox-fs from .deb ───────────
+  # ── Sysbox v0.6.7 CE — sysbox-mgr and sysbox-fs from .deb ───────────────
   #
   # 0.6.7 is the latest released .deb (May 2025). sysbox-runc is replaced by
   # the separately-built 0.7.0 binary above.
@@ -80,7 +80,7 @@ let
     };
   };
 
-  # ── containerd v3 config template ─────────────────────────────────
+  # ── containerd v3 config template ─────────────────────────────────────────
   #
   # k3s with containerd 2.x reads config-v3.toml.tmpl (not config.toml.tmpl).
   # The v3 config schema uses plugin namespace io.containerd.cri.v1.runtime
@@ -101,7 +101,7 @@ let
 
     {{ template "base" . }}
 
-    # ── Sysbox runtime ─────────────────────────────────────────────────────────
+    # ── Sysbox runtime ────────────────────────────────────────────────────────
     [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.sysbox-runc]
       runtime_type = "io.containerd.runc.v2"
 
@@ -110,7 +110,7 @@ let
       SystemdCgroup = false
   '';
 
-  # ── sysctl settings required by sysbox ───────────────────────────
+  # ── sysctl settings required by sysbox ───────────────────────────────────
   sysboxSysctls = {
     "kernel.unprivileged_userns_clone" = 1;
     "fs.inotify.max_queued_events"     = 1048576;
@@ -123,7 +123,7 @@ let
 
 in
 {
-  # ── Option declaration ────────────────────────────────────────────
+  # ── Option declaration ────────────────────────────────────────────────────
   # Uses k3s-sysbox (not k3s) to avoid conflict with k3s-podman.nix.
   # Import only ONE of these two modules.
   options.services.coder-nixos.k3s-sysbox = {
@@ -142,14 +142,14 @@ in
     };
   };
 
-  # ── Implementation ───────────────────────────────────────────────
+  # ── Implementation ────────────────────────────────────────────────────────
   config = lib.mkIf cfg.enable {
 
-    # ── Kernel parameters sysbox requires ───────────────────────────
+    # ── Kernel parameters sysbox requires ──────────────────────────────────
     boot.kernel.sysctl  = sysboxSysctls;
     boot.kernelParams   = [ "user_namespace.enable=1" ];
 
-    # ── subuid/subgid for kubelet user namespace allocation ─────────────
+    # ── subuid/subgid for kubelet user namespace allocation ───────────────
     # k3s runs as root; kubelet needs a large subuid/subgid range to allocate
     # UID maps for pods using hostUsers: false (user namespaces).
     # 65536 UIDs per pod × up to 110 pods = ~7.2M UIDs needed.
@@ -158,7 +158,7 @@ in
       subGidRanges = [{ startGid = 231072; count = 7208960; }];
     };
 
-    # ── k3s service ─────────────────────────────────────────────────
+    # ── k3s service ────────────────────────────────────────────────────────
     services.k3s = {
       enable = true;
       role   = "server";
@@ -177,7 +177,7 @@ in
       containerdConfigTemplate = null;
     };
 
-    # ── Deploy containerd v3 config template before k3s starts ──────────
+    # ── Deploy containerd v3 config template before k3s starts ────────────
     #
     # containerd 2.x (bundled with k3s 1.32+) uses config-v3.toml.tmpl.
     # The NixOS k3s module only writes config.toml.tmpl (v2 schema), which
@@ -211,7 +211,7 @@ in
       };
     };
 
-    # ── kubeconfig ownership fix + API readiness wait ──────────────────
+    # ── kubeconfig ownership fix + API readiness wait ────────────────────
     # Two ExecStartPost scripts run in order:
     #   1. k3s-fix-kubeconfig  — waits for k3s.yaml and fixes ownership
     #   2. k3s-wait-api-ready  — polls /readyz until the API accepts requests,
@@ -242,7 +242,7 @@ in
       '')
     ];
 
-    # ── sysbox-mgr daemon ────────────────────────────────────────────
+    # ── sysbox-mgr daemon ──────────────────────────────────────────────────
     systemd.services.sysbox-mgr = {
       description = "sysbox-mgr (part of the Sysbox container runtime)";
       wantedBy    = [ "multi-user.target" ];
@@ -267,7 +267,7 @@ in
       };
     };
 
-    # ── sysbox-fs daemon ─────────────────────────────────────────────
+    # ── sysbox-fs daemon ───────────────────────────────────────────────────
     systemd.services.sysbox-fs = {
       description = "sysbox-fs (part of the Sysbox container runtime)";
       wantedBy    = [ "multi-user.target" ];
@@ -291,7 +291,7 @@ in
       };
     };
 
-    # ── sysbox umbrella target ───────────────────────────────────────
+    # ── sysbox umbrella target ─────────────────────────────────────────────
     systemd.services.sysbox = {
       description = "Sysbox container runtime";
       wantedBy    = [ "multi-user.target" ];
@@ -310,7 +310,7 @@ in
       };
     };
 
-    # ── RuntimeClass auto-deploy manifest ─────────────────────────────
+    # ── RuntimeClass auto-deploy manifest ─────────────────────────────────
     # k3s auto-deploys YAML files placed in /var/lib/rancher/k3s/server/manifests/
     # The NixOS k3s module accepts an attrset of submodules with a `content` key.
     services.k3s.manifests."sysbox-runtimeclass".content = {
@@ -320,7 +320,7 @@ in
       handler    = "sysbox-runc";
     };
 
-    # ── Pre-create the coder-workspaces namespace ─────────────────────────
+    # ── Pre-create the coder-workspaces namespace ────────────────────────────
     # Templates deploy workloads into this namespace; they should not own it.
     systemd.services.coder-k3s-namespace = {
       description = "Create coder-workspaces namespace in k3s";
@@ -346,28 +346,28 @@ in
       };
     };
 
-    # ── KUBECONFIG system-wide ────────────────────────────────────────
+    # ── KUBECONFIG system-wide ────────────────────────────────────────────
     environment.variables.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 
-    # ── Inject KUBECONFIG into coder.service ──────────────────────────
+    # ── Inject KUBECONFIG into coder.service ─────────────────────────────
     systemd.services.coder = {
       environment = {
         KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       };
     };
 
-    # ── Ensure coder group exists ────────────────────────────────────
+    # ── Ensure coder group exists ─────────────────────────────────────────
     users.groups.coder = lib.mkDefault {};
 
-    # ── Additional packages ───────────────────────────────────────────
+    # ── Additional packages ───────────────────────────────────────────────
     # rsync is required by sysbox-mgr preflight check; without it,
     # sysbox-mgr exits immediately and pods stay stuck in ContainerCreating.
     environment.systemPackages = with pkgs; [ kubectl kubernetes-helm fuse fuse3 rsync ];
 
-    # ── FUSE: allow non-root mounts (needed by sysbox-fs) ──────────────
+    # ── FUSE: allow non-root mounts (needed by sysbox-fs) ─────────────────
     programs.fuse.userAllowOther = true;
 
-    # ── Firewall ─────────────────────────────────────────────────────
+    # ── Firewall ──────────────────────────────────────────────────────────
     networking.firewall.allowedTCPPorts = lib.mkIf config.networking.firewall.enable [ 6443 ];
 
   }; # end config
