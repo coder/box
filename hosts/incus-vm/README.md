@@ -5,8 +5,8 @@
 Box turns a NixOS machine into a **self-contained Coder deployment**. After
 `nixos-rebuild switch`, the machine runs:
 
-- **Coder server** — full control plane, accessible over a Tailscale tunnel or
-  a configured external URL
+- **Coder server** — full control plane, accessible over a `*.try.coder.app`
+  tunnel or a configured external URL
 - **PostgreSQL** — Coder's database, managed by the box flake
 - **k3s + sysbox** (optional) — single-node Kubernetes cluster where Coder
   provisions workspaces as pods; sysbox-runc gives each pod its own Docker daemon
@@ -27,12 +27,13 @@ required.
 
 - Imports the upstream `incus-virtual-machine.nix` profile (QEMU guest agents,
   virtio drivers) — skip this for bare-metal
-- `systemd-networkd` DHCP on `enp5s0` (the virtio NIC Incus assigns to x86_64 VMs)
+- `systemd-networkd` DHCP on `enp5s0` (the virtio NIC Incus assigns to VMs on
+  both x86_64 and aarch64)
 - Disables the KDE / PipeWire / printing / Avahi stack — a headless host only
   needs Coder + PostgreSQL
 
-`default.nix` is the per-host entrypoint that imports `incus-vm.nix` plus the
-two runtime files from `/etc/nixos/` (see below).
+`default.nix` is the per-host entrypoint that imports `incus-vm.nix`, your
+`local.nix` secrets file, and the runtime files from `/etc/nixos/` (see below).
 
 The same pattern works for bare-metal machines (ThinkStation, etc.) — just skip
 `incus-vm.nix` or replace it with your own hardware module.
@@ -97,9 +98,24 @@ cp /etc/nixos-repo/hosts/incus-vm/incus-vm.nix \
 git -C /etc/nixos-repo add hosts/$HOSTNAME/
 ```
 
-### 3. Enable k3s (required for workspace provisioning)
+> **`/etc/nixos/coder.nix`:** The copied `default.nix` does **not** import this
+> file. It only exists on VMs that are *also* running as a coder-agent workspace
+> (i.e. the `incus-nixos` template writes it). On a pure box host it won't be
+> present, and you don't need it.
 
-Edit `hosts/$HOSTNAME/default.nix` and add:
+### 3. Set architecture and enable k3s
+
+Edit `hosts/$HOSTNAME/default.nix`.
+
+**aarch64 VMs:** The flake defaults to `x86_64-linux`. If your VM is ARM
+(e.g. running on Apple Silicon or an ARM server), add this or the build will
+evaluate for the wrong architecture:
+
+```nix
+nixpkgs.hostPlatform = "aarch64-linux";
+```
+
+Then enable k3s (required for workspace provisioning):
 
 ```nix
 # sysbox-runc — each workspace pod gets its own Docker daemon (no privileged mode)
@@ -115,12 +131,41 @@ services.coder-nixos.k3s.enable = true;
 > Only enable one. `k3s-sysbox` is required for the `k3s-sysbox` workspace
 > template; `k3s` works with `k3s-podman` and `k3s-dev`.
 
-### 4. Write the runtime hostname file
+### 4. Create local.nix
+
+`local.nix` holds per-host secrets (admin credentials, LAN IP, SSH keys). It is
+gitignored and must be created manually:
+
+```sh
+cp /etc/nixos-repo/local.nix.example \
+   /etc/nixos-repo/hosts/$HOSTNAME/local.nix
+
+# Mark it so the flake's builtins.readDir can see it without committing it.
+git -C /etc/nixos-repo add --intent-to-add -f hosts/$HOSTNAME/local.nix
+```
+
+Edit `hosts/$HOSTNAME/local.nix` and at minimum set:
+
+```nix
+services.coder-nixos.lanIp = "192.168.x.x";  # VM's primary IP
+
+systemd.services.coder.environment = {
+  CODER_ADMIN_EMAIL    = "you@example.com";
+  CODER_ADMIN_USERNAME = "admin";
+  CODER_ADMIN_PASSWORD = "changeme";
+};
+```
+
+These credentials are read by `coder-init-admin.service` on first boot to
+automatically create the admin user and mint a long-lived session token for
+template-sync. **Without this, templates won't be pushed on the first
+`nixos-rebuild switch`.**
+
+### 5. Write the runtime hostname file
 
 This file lives outside the flake so it doesn't need to be committed. On an
 Incus VM provisioned by the `incus-nixos` template, `/etc/nixos/incus.nix` is
-already written by `incus-virtual-machine.nix`. For bare-metal or a fresh VM,
-create it manually:
+already written at first boot. For a fresh VM or bare-metal, create it manually:
 
 ```sh
 cat > /etc/nixos/incus.nix << 'EOF'
@@ -131,11 +176,7 @@ cat > /etc/nixos/incus.nix << 'EOF'
 EOF
 ```
 
-> `/etc/nixos/coder.nix` is **not** needed here. That file is for the
-> `coder-agent` service on workspace VMs. The box host runs the Coder *server*,
-> not an agent.
-
-### 5. Apply
+### 6. Apply
 
 ```sh
 nixos-rebuild switch --flake /etc/nixos-repo#$(hostname -s) --impure
@@ -143,36 +184,36 @@ nixos-rebuild switch --flake /etc/nixos-repo#$(hostname -s) --impure
 
 `--impure` is required because `/etc/nixos/incus.nix` lives outside the flake
 tree. This will build and activate: Coder server, PostgreSQL, k3s, sysbox,
-template-sync, and all supporting services.
+and all supporting services.
 
-### 6. Bootstrap the admin user
-
-After the first `nixos-rebuild switch`, the Coder server is up but has no users.
-Complete setup via the first-run wizard:
+On first boot, `coder-init-admin.service` runs automatically after Coder starts:
+creates the admin user, mints a long-lived session token to
+`/etc/coder/session-token`, and pushes all workspace templates (`k3s-sysbox`,
+`k3s-podman`, `k3s-dev`, `coder-cli`) via Terraform. Check progress with:
 
 ```sh
-# The tunnel URL is printed in the Coder server logs:
+journalctl -u coder-init-admin -f
+```
+
+Once complete, the tunnel URL is in `/etc/motd`:
+
+```sh
+cat /etc/motd
+```
+
+**Fallback (no local.nix credentials):** If `CODER_ADMIN_EMAIL` was left empty,
+`coder-init-admin` is skipped. Complete setup via the first-run wizard instead:
+
+```sh
+# Find the tunnel URL:
 journalctl -u coder --no-pager | grep "View the Web UI"
 ```
 
-Open that URL in a browser and create the admin user. Or use the CLI:
+Open that URL in a browser, create the admin user, then log in with the CLI:
 
 ```sh
 CODER_URL=http://localhost:3000 coder login http://localhost:3000
 ```
 
-Once logged in, `template-sync` will succeed on the next `nixos-rebuild switch`
-and push the workspace templates (`k3s-sysbox`, `k3s-podman`, `k3s-dev`,
-`coder-cli`) automatically.
-
-To automate first-run on future machines, set these in the host's NixOS config
-(e.g. via a secret manager or environment file):
-
-```
-CODER_ADMIN_EMAIL=admin@example.com
-CODER_ADMIN_USERNAME=admin
-CODER_ADMIN_PASSWORD=...
-```
-
-The `coder-init-admin` service reads these at boot and creates the user + mints
-a long-lived session token for template-sync automatically.
+Once logged in, run `sudo nixos-rebuild switch` again to push templates via
+`template-sync`.

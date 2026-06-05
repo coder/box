@@ -1,10 +1,12 @@
-# Template host config for any Incus VM provisioned by the incus-vm Coder template.
+# Template host config for a box host running inside an Incus VM.
 #
-# The provisioner writes this file (or a copy) to hosts/<hostname>/default.nix
-# at workspace start. --impure is required because /etc/nixos/incus.nix and
-# /etc/nixos/coder.nix are runtime files outside the flake tree.
+# Copy this to hosts/<hostname>/default.nix and incus-vm.nix to the same
+# folder, then follow hosts/incus-vm/README.md.
 #
-# To enable k3s add one of these in your host's default.nix:
+# --impure is required because /etc/nixos/incus.nix is a runtime file
+# outside the flake tree.
+#
+# To enable k3s add one of these below:
 #   services.coder-nixos.k3s-sysbox.enable = true;  # sysbox-runc (Docker per workspace)
 #   services.coder-nixos.k3s.enable = true;          # rootless Podman variant
 
@@ -13,9 +15,17 @@
 {
   imports = [
     ./incus-vm.nix          # QEMU guest agents, networkd DHCP, no desktop stack
+    ./local.nix             # per-host secrets: admin creds, LAN IP, SSH keys
     /etc/nixos/incus.nix    # hostname — written by incus-virtual-machine init
-    /etc/nixos/coder.nix    # coder-agent service + workspace user (token, URL)
+    # /etc/nixos/coder.nix  # only needed if this VM is also a coder-agent workspace
   ];
+
+  # Uncomment for aarch64 VMs (Apple Silicon, ARM servers, etc.).
+  # The flake defaults to x86_64-linux; without this the build evaluates
+  # for the wrong architecture and will fail or produce a broken system.
+  # nixpkgs.hostPlatform = "aarch64-linux";
+
+  services.coder-nixos.k3s-sysbox.enable = true;
 
   system.stateVersion = "25.11";
 }
