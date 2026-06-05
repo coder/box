@@ -43,6 +43,12 @@
   isoImage.makeBiosBootable = pkgs.stdenv.hostPlatform.isx86;
   isoImage.makeUsbBootable  = true;  # `dd` straight to a USB stick and boot
   isoImage.volumeID         = "BOX_LIVE";
+  # Boot-menu label (both the BIOS/isolinux and EFI/grub entries). The label is
+  # "<distroName> <version><appendToMenuLabel>"; the default append is
+  # " Installer", which is misleading here since this is the live appliance, not
+  # the installer. Append " - Coder Box Appliance" -> "NixOS <version> - Coder
+  # Box Appliance". Leading space is required (it's concatenated directly).
+  isoImage.appendToMenuLabel = " - Coder Box Appliance";
   # ISO file name. iso-image.nix derives isoName from image.baseName as
   # "<baseName>.iso", and defaults baseName to "nixos-<version>-<arch>". We
   # override baseName (mkForce, to win over that default) but keep the arch
