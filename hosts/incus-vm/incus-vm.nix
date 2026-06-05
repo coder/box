@@ -9,23 +9,13 @@
 #   - Switches networking to systemd-networkd + DHCP on enp5s0 (the
 #     default virtio NIC Incus assigns to x86_64 VMs).
 #   - Disables the full desktop stack (KDE, PipeWire, printing, Avahi)
-#     that configuration.nix enables by default — a VM only needs the
-#     Coder server + PostgreSQL.
+#     that configuration.nix enables by default — a headless VM only needs
+#     the Coder server + PostgreSQL.
 #
-# Usage in hosts/<hostname>/default.nix:
-#
-#   imports = [
-#     ../../../nixos/incus-vm.nix
-#     ./local.nix
-#     ./coder-agent.nix   # copy of /etc/nixos/coder.nix from provisioner
-#   ];
-#
-# The provisioner (nixos.tf in the incus-vm Coder template) is responsible
-# for:
-#   - cloning https://github.com/coder/box to /etc/nixos-repo
-#   - symlinking /etc/nixos/flake.nix -> /etc/nixos-repo/flake.nix
-#   - creating hosts/<hostname>/ with local.nix + coder-agent.nix
-#   - running: nixos-rebuild switch --flake /etc/nixos-repo#<hostname>
+# k3s / sysbox are NOT disabled here. Set:
+#   services.coder-nixos.k3s-sysbox.enable = true;
+# in hosts/<hostname>/default.nix to enable the full box stack (Coder +
+# PostgreSQL + k3s + sysbox) inside the VM.
 
 { lib, modulesPath, ... }:
 
@@ -67,9 +57,4 @@
   security.rtkit.enable                  = lib.mkForce false;
   services.printing.enable               = lib.mkForce false;
   services.avahi.enable                  = lib.mkForce false;
-
-  # Incus VMs don't need k3s-sysbox by default (the shared config enables it
-  # via lib.mkDefault; mkForce wins here). Enable explicitly in the host's
-  # default.nix if you need k3s in the VM.
-  services.coder-nixos.k3s-sysbox.enable = lib.mkForce false;
 }
