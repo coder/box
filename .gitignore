@@ -3,4 +3,9 @@ hosts/*/local.nix
 *.tfstate*
 .terraform/
 *.bak
+
+# Appliance image build outputs (Makefile --out-link target dir + artifacts)
 out/
+*.iso
+*.qcow2
+*.raw
