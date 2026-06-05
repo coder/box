@@ -184,10 +184,13 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     k3s-sysbox.nix              # k3s + sysbox runtime
     k3s-podman.nix              # k3s + rootless Podman socket
     screenconnect.nix           # ScreenConnect remote access client
+    live-iso.nix                # live "Box" ISO module (imported by hosts/live)
   pkgs/
     coder.nix                   # Coder server package derivation
     coderd-provider.nix         # terraform-provider-coderd derivation
   hosts/
+    live/                   # `live` host: builds the live "Box" ISO; no disko/facter/hardware-config
+                            #   build: nix build .#nixosConfigurations.live.config.system.build.isoImage
     coder-thinkcentre/      # folder name = hostname; default.nix has a hardware-model header comment
       default.nix               # host module: imports facter/legacy + local.nix + thinkcentre-only services
       hardware-configuration.nix   # legacy fallback (used until facter.json exists)
