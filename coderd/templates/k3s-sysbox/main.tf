@@ -26,14 +26,14 @@ variable "coder_lan_ip" {
   description = "LAN IP of the Coder server host, injected into pod hostAliases so workspaces can resolve the hostname without mDNS. Set via services.coder-nixos.lanIp in the host's local.nix."
 }
 
-# ── Provider config ────────────────────────────────────────────────────────
+# ── Provider config ───────────────────────────────────────────────────
 provider "kubernetes" {
   config_path = "/etc/rancher/k3s/k3s.yaml"
 }
 
 provider "coder" {}
 
-# ── Workspace data ─────────────────────────────────────────────────────────
+# ── Workspace data ───────────────────────────────────────────────────
 data "coder_provisioner"     "me" {}
 data "coder_workspace"       "me" {}
 data "coder_workspace_owner" "me" {}
@@ -44,10 +44,10 @@ locals {
   ws_name   = lower(data.coder_workspace.me.name)
   prefix    = "coder-${data.coder_workspace.me.id}"
   pod_name  = "${local.prefix}-pod"
-  kubectl   = "/nix/store/5bx4yn3kq9rgyaianxxldnr2ffr2k5fr-k3s-1.34.5+k3s1/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+  kubectl   = "/run/current-system/sw/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
 }
 
-# ── Parameters ────────────────────────────────────────────────────────────
+# ── Parameters ────────────────────────────────────────────────────
 data "coder_parameter" "image" {
   name         = "image"
   display_name = "Container image"
@@ -164,7 +164,7 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
-# ── Coder agent ────────────────────────────────────────────────────────────
+# ── Coder agent ─────────────────────────────────────────────────────
 resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
   os   = "linux"
@@ -204,7 +204,7 @@ resource "coder_agent" "main" {
     REPO_URL="${data.coder_parameter.repo_url.value}"
     if [ -n "$REPO_URL" ]; then
       REPO_DIR=$(basename "$REPO_URL" .git)
-      if [ ! -d ~/"$REPO_DIR" ]; then
+      if [ ! -d ~/$"$REPO_DIR" ]; then
         echo "Cloning $REPO_URL..."
         git clone "$REPO_URL" ~/"$REPO_DIR"
       fi
@@ -262,7 +262,7 @@ resource "coder_agent" "main" {
   }
 }
 
-# ── VS Code Web ────────────────────────────────────────────────────────────
+# ── VS Code Web ────────────────────────────────────────────────────────
 module "vscode-web" {
   count          = data.coder_workspace.me.start_count
   source         = "registry.coder.com/coder/vscode-web/coder"
@@ -276,7 +276,7 @@ module "vscode-web" {
   order          = 1
 }
 
-# ── Cursor ─────────────────────────────────────────────────────────────────
+# ── Cursor ───────────────────────────────────────────────────────────
 module "cursor" {
   count    = data.coder_workspace.me.start_count
   source   = "registry.coder.com/coder/cursor/coder"
@@ -286,7 +286,7 @@ module "cursor" {
   order    = 2
 }
 
-# ── JetBrains (Toolbox) ─────────────────────────────────────────────────────
+# ── JetBrains (Toolbox) ──────────────────────────────────────────────────────
 module "jetbrains" {
   count          = data.coder_workspace.me.start_count
   source     = "registry.coder.com/coder/jetbrains/coder"
@@ -299,7 +299,7 @@ module "jetbrains" {
   coder_app_order = 3
 }
 
-# ── Persistent home PVC ───────────────────────────────────────────────────
+# ── Persistent home PVC ───────────────────────────────────────────────
 resource "kubernetes_persistent_volume_claim_v1" "home" {
   metadata {
     name      = "${local.prefix}-home"
@@ -385,8 +385,10 @@ resource "terraform_data" "workspace" {
           hostUsers        = false
           restartPolicy    = "OnFailure"
           hostname         = "${local.owner}-${local.ws_name}"
-          hostAliases = [{
-          }]
+          hostAliases = length(var.coder_lan_ip) > 0 ? [{
+            ip        = var.coder_lan_ip
+            hostnames = [var.coder_hostname]
+          }] : []
           containers = [{
             name             = "workspace"
             image            = data.coder_parameter.image.value
