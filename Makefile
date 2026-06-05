@@ -32,14 +32,19 @@ norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 # Single build helper used by every target. extendModules lets us override
 # nixpkgs.hostPlatform (per-arch) and the disko image format from one recipe,
 # so adding a format/arch is just a thin target below — no duplicated nix
-# plumbing.
+# plumbing. We ALWAYS pin nixpkgs.hostPlatform: when no arch is given we use
+# `builtins.currentSystem` (the builder's native arch), otherwise the bare
+# `appliance/<format>` targets would inherit configuration.nix's
+# `nixpkgs.hostPlatform = lib.mkOptionDefault "x86_64-linux"` and always build
+# x86_64 even on an aarch64 host. `--impure` is what makes currentSystem
+# available.
 #   $(1) = host (nixosConfigurations.<host>)
 #   $(2) = system.build.<attr>  (isoImage | diskoImages)
 #   $(3) = extra module fields  (nix attrset body, may be empty)
 #   $(4) = arch token           (empty = builder's native arch)
 define box_build
 	$(NIX) build --impure --no-write-lock-file --print-out-paths --expr \
-	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { $(if $(4),nixpkgs.hostPlatform = "$(call norm_arch,$(4))"; ) $(3) } ]; }).config.system.build.$(2)'
+	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; $(3) } ]; }).config.system.build.$(2)'
 endef
 
 .PHONY: appliance/iso appliance/qcow2 appliance/raw
