@@ -30,7 +30,28 @@
   # baked into the image so it deploys templates exactly like an installed box.
   # (The git-commit lookups in those scripts fall back to "unknown" when no
   # .git is present, which is fine.)
-  environment.etc."nixos-repo".source = self.outPath;
+  #
+  # IMPORTANT: filter out build artifacts before baking. `self.outPath` is the
+  # flake source, but on a DIRTY working tree `getFlake`/`nix build .#…` copies
+  # untracked files into it *even if they're gitignored* — including the
+  # Makefile's ./out (where built images land) and any stray *.iso/*.qcow2/*.raw
+  # in the repo. Baking that unfiltered means each build's image gets embedded
+  # into /etc/nixos-repo → into the squashfs → into the *next* image, so the ISO
+  # grows on every rebuild (a feedback loop). cleanSourceWith strips those paths
+  # so the baked repo is stable regardless of build artifacts, while still
+  # shipping the full tree (coderd/ etc.) for nixos-rebuild / coder-reset.
+  environment.etc."nixos-repo".source = lib.cleanSourceWith {
+    name = "nixos-repo-src";
+    src = self.outPath;
+    filter = path: type:
+      let base = baseNameOf (toString path); in
+      base != "out"
+      && base != "result"
+      && !(lib.hasPrefix "result-" base)
+      && !(lib.hasSuffix ".iso" base)
+      && !(lib.hasSuffix ".qcow2" base)
+      && !(lib.hasSuffix ".raw" base);
+  };
 
   # Make the pinned nixpkgs resolvable on the box so `nix` / flake commands
   # behave like an installed system, without shipping a channel.
