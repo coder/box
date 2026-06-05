@@ -29,7 +29,7 @@ NixOS configuration for Coder demo and workshop boxes.
 flake.nix                  # entry point: nixosConfigurations.<host> per machine
 flake.lock                 # pinned nixpkgs / disko / nixos-facter-modules
 configuration.nix          # shared NixOS config (all machines)
-Makefile                   # `make live-iso` / `make live-iso/<arch>` build targets
+Makefile                   # image build targets: live-ephemeral-iso, persistent-disk/{qcow2,raw}
 local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
 .gitignore                 # ignores hosts/*/local.nix
 nixos/
@@ -39,7 +39,8 @@ nixos/
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
   k3s-podman.nix           # k3s + rootless Podman socket
   screenconnect.nix        # optional ScreenConnect remote access client
-  live-iso.nix             # turns the shared config into a bootable live ISO (hosts/live)
+  box-turnkey.nix          # shared turn-key bits for prebuilt images (login + Coder bootstrap)
+  live-iso.nix             # ephemeral live ISO module (hosts/live)
 pkgs/
   coder.nix                # custom Coder server package
   coderd-provider.nix      # terraform-provider-coderd package
@@ -51,8 +52,10 @@ hosts/
     local.nix              # gitignored: admin creds, secrets, SSH users
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
-  live/                    # `live` host: builds the live "Box" ISO (no disk install)
+  live/                    # `live` host: ephemeral live "Box" ISO (no disk install)
     default.nix            # imports nixos/live-iso.nix only (no disko/facter/hardware-config)
+  persistent-disk/         # `persistent-disk` host: persistent qcow2/raw disk image
+    default.nix            # imports disko-standard.nix + box-turnkey.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
   templates/
@@ -112,56 +115,71 @@ The installer generates `hosts/<hostname>/{default.nix,local.nix,facter.json}`, 
 > ```
 > And use a BIOS-compatible disko layout instead of `disko-standard.nix`.
 
-## Live ISO (The Box™ on a USB — no install)
+## Prebuilt images (The Box™ without `install.sh`)
 
-Sometimes you don't want to wipe a disk; you just want The Box™. The `live`
-host builds a bootable ISO that runs the *exact same* configured system —
-KDE Plasma, the Coder server, k3s, Podman, the bundled templates — straight
-from RAM, with admin bootstrap and template deploy happening on boot just like
-a real install. It is not an installer.
+Sometimes you don't want to run the installer; you just want The Box™. Two
+image flavours build the *exact same* configured system — KDE Plasma, the Coder
+server, k3s, Podman, the bundled templates — with admin bootstrap and template
+deploy happening on boot just like a real install. Neither is an installer.
 
-Build the ISO (needs a Linux machine with Nix + flakes):
+| Flavour | Host | State | Build |
+|---|---|---|---|
+| **Live ISO** (ephemeral) | `live` | tmpfs overlay — wiped on reboot | `make live-ephemeral-iso` |
+| **Persistent disk** (qcow2) | `persistent-disk` | persists across reboots | `make persistent-disk/qcow2` |
+| **Persistent disk** (raw) | `persistent-disk` | persists across reboots | `make persistent-disk/raw` |
+
+All builds need a Linux machine with Nix + flakes. Every target also takes an
+architecture suffix (short names are normalized to `*-linux`); cross-arch
+builds need a matching builder (native remote builder or binfmt/QEMU):
 
 ```sh
-make live-iso                   # build for this machine's architecture
-# or pick an architecture explicitly:
-make live-iso/x86_64-linux
-make live-iso/aarch64-linux     # EFI-only (cross-arch needs a matching builder)
-
-# equivalent to the default target, without make:
-nix build .#nixosConfigurations.live.config.system.build.isoImage
-# → result/iso/coder-box-live-*.iso
+make live-ephemeral-iso/aarch64-linux
+make persistent-disk/qcow2/aarch64-linux
+make persistent-disk/raw/x86_64
 ```
 
-Flash it to a USB stick (replace `sdX` with your device) and boot it:
+The turn-key login + Coder admin bootstrap shared by both flavours live in
+[`nixos/box-turnkey.nix`](nixos/box-turnkey.nix): autologin to the `coderbox`
+desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
+`http://<hostname>.local:3000` (or the `*.try.coder.app` tunnel URL in
+`/etc/motd`). Change these before sharing an image by dropping a gitignored
+`hosts/<host>/local.nix` (same shape as `local.nix.example`).
+
+### Live ISO (`live`)
+
+The live root filesystem is the squashfs + tmpfs overlay from nixpkgs'
+`iso-image.nix`, so there's no partition to format or mount and **all state is
+discarded on reboot**. `hosts/live/default.nix` imports
+[`nixos/live-iso.nix`](nixos/live-iso.nix) (which pulls in `box-turnkey.nix`) —
+**no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
+The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
+ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
+aarch64 ISO is EFI-only). Flash it (it's isohybrid) and boot:
 
 ```sh
 sudo dd if=result/iso/coder-box-live-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
-On boot it autologins to the `coderbox` desktop and Coder comes up at
-`http://live.local:3000` (or the `*.try.coder.app` tunnel URL in `/etc/motd`),
-with admin `admin@coder.com` / `PleaseChangeMe1234`. Everything lives in the
-tmpfs overlay, so changes are discarded on reboot.
+### Persistent disk image (`persistent-disk`)
 
-How it's wired (see [`nixos/live-iso.nix`](nixos/live-iso.nix)):
+Built with [disko](https://github.com/nix-community/disko)'s image builder, so
+it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
+ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
+`install.sh` on. `hosts/persistent-disk/default.nix` imports
+`disko-standard.nix` + `box-turnkey.nix`.
 
-- `hosts/live/default.nix` imports `nixos/live-iso.nix` only — **no**
-  `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`. The
-  live root filesystem is the squashfs + tmpfs overlay from nixpkgs'
-  `iso-image.nix`, so there's no partition to format or mount.
-- The shared `systemd-boot` / EFI-variable settings from `configuration.nix`
-  are forced off; the ISO carries its own GRUB-EFI + isolinux loader.
-- The flake source is baked in at `/etc/nixos-repo` so the Coder bootstrap
-  units find `coderd/` templates and deploy them exactly like an install.
+- **`qcow2`** — boot it directly in QEMU/libvirt/UTM. A qcow2 is a container
+  format, so it can **not** be `dd`'d to a drive as-is — convert first
+  (`qemu-img convert -O raw box.qcow2 box.img`) or build the raw image instead.
+- **`raw`** — a plain disk image you can `dd` straight onto a physical drive:
+  ```sh
+  sudo dd if=result/*.img of=/dev/sdX bs=4M status=progress oflag=sync
+  ```
 
-This host is completely separate from the disk-install flow above
-(`nixos/install.sh`, `disko`, `nixos-facter`); adding it changes nothing for
-normal installs. To customize the live image (admin creds, SSH users, etc.),
-drop a gitignored `hosts/live/local.nix` (same shape as `local.nix.example`).
-
-To change the baked-in admin/login defaults before sharing the ISO, override
-them in `hosts/live/local.nix` or edit `nixos/live-iso.nix`.
+Both image hosts are completely separate from the disk-install flow above
+(`nixos/install.sh`, `nixos-facter`); adding them changes nothing for normal
+installs. The `persistent-disk` host shares only the disk *layout*
+(`disko-standard.nix`) with real installs, never the install process itself.
 
 ## After install
 

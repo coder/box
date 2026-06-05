@@ -1,0 +1,64 @@
+# Shared "turn-key" Box™ config — the bits that make an image boot straight
+# into a fully-configured, ready-to-use Coder box with no install step.
+#
+# Imported by both image flavours:
+#   - nixos/live-iso.nix         (live, ephemeral ISO: hosts/live)
+#   - hosts/persistent-disk/     (persistent disk image: qcow2 / raw)
+#
+# On real installs these settings come from nixos/install.sh + the gitignored
+# hosts/<host>/local.nix it generates. The image flavours have no install step,
+# so this module supplies the same turn-key defaults (same values the installer
+# defaults to). Change them before handing an image to anyone untrusted, or
+# override per-image via hosts/<host>/local.nix.
+
+{ config, lib, pkgs, modulesPath, self, inputs, ... }:
+
+{
+  imports = [
+    # Broad driver/firmware set so the image boots on arbitrary hardware /
+    # virtual machines. This replaces the per-host facter.json /
+    # hardware-configuration.nix that installed hosts rely on (image hosts
+    # ship neither).
+    (modulesPath + "/profiles/all-hardware.nix")
+  ];
+
+  # ── Bake the repo into the image at /etc/nixos-repo ──────────────────────────
+  # The on-disk installer copies the working tree to /etc/nixos-repo; the Coder
+  # bootstrap units (coder-init-admin.service, the coder-template-sync
+  # activation script) read templates from /etc/nixos-repo/coderd and the
+  # locally-packaged provider mirror. Point /etc/nixos-repo at the flake source
+  # baked into the image so it deploys templates exactly like an installed box.
+  # (The git-commit lookups in those scripts fall back to "unknown" when no
+  # .git is present, which is fine.)
+  environment.etc."nixos-repo".source = self.outPath;
+
+  # Make the pinned nixpkgs resolvable on the box so `nix` / flake commands
+  # behave like an installed system, without shipping a channel.
+  nix.registry.nixpkgs.flake = inputs.nixpkgs;
+
+  # ── Login + Coder admin bootstrap ────────────────────────────────────────────
+  # Autologin drops straight into the Plasma desktop, mirroring a
+  # freshly-installed, configured box.
+  services.displayManager.autoLogin = {
+    enable = true;
+    user   = "coderbox";
+  };
+
+  users.users.coderbox = {
+    isNormalUser    = true;
+    description     = "coderbox";
+    extraGroups     = [ "networkmanager" "wheel" ];
+    packages        = [ pkgs.kdePackages.kate ];
+    initialPassword = "coderbox";
+  };
+
+  # coder-init-admin.service reads CODER_ADMIN_* from coder.service's
+  # environment and creates a local admin on first boot, then mints a session
+  # token and deploys the templates from /etc/nixos-repo/coderd. With these set
+  # the Coder instance is ready to use immediately.
+  systemd.services.coder.environment = {
+    CODER_ADMIN_EMAIL    = "admin@coder.com";
+    CODER_ADMIN_USERNAME = "admin";
+    CODER_ADMIN_PASSWORD = "PleaseChangeMe1234";
+  };
+}
