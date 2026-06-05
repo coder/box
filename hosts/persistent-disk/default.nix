@@ -22,7 +22,7 @@
 # flow. The turn-key login + Coder admin bootstrap (shared with the live ISO)
 # live in nixos/box-turnkey.nix.
 
-{ lib, ... }:
+{ lib, pkgs, ... }:
 
 {
   imports = [
@@ -37,10 +37,12 @@
   disko.devices.disk.main.device = lib.mkForce "/dev/vda";
 
   # Output file name: disko defaults imageName to the disk attr name ("main"),
-  # which would produce main.raw / main.qcow2. Name it after the appliance so
-  # the built image is coder-box-appliance.raw / .qcow2 (matches the ISO's
-  # image.baseName).
-  disko.devices.disk.main.imageName = lib.mkForce "coder-box-appliance";
+  # which would produce main.raw / main.qcow2. Name it after the appliance and
+  # include the arch (like the ISO's image.baseName) so the built image is
+  # coder-box-appliance-<arch>.raw / .qcow2 — arch visible, and x86_64/aarch64
+  # images don't collide in ./out.
+  disko.devices.disk.main.imageName =
+    lib.mkForce "coder-box-appliance-${pkgs.stdenv.hostPlatform.system}";
 
   # The image is built offline in a VM with no EFI variable store, so install
   # the bootloader without touching EFI variables. systemd-boot (enabled by

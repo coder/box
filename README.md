@@ -145,8 +145,9 @@ Each target drops a `--out-link` (GC-root symlink) in `./out/` named after the
 target — e.g. `out/appliance-iso`, `out/appliance-raw-aarch64-linux` — pointing
 straight at the built image in the Nix store (no copy; `./out` is gitignored).
 The ISO is then at `out/appliance-iso/iso/coder-box-appliance-*.iso`, and a disk
-image at `out/appliance-raw/coder-box-appliance.raw` (or
-`out/appliance-qcow2/coder-box-appliance.qcow2`).
+image at `out/appliance-raw/coder-box-appliance-*.raw` (or
+`out/appliance-qcow2/coder-box-appliance-*.qcow2`). All names carry the arch,
+e.g. `coder-box-appliance-aarch64-linux.iso`.
 
 The turn-key login + Coder admin bootstrap shared by both flavours live in
 [`nixos/box-turnkey.nix`](nixos/box-turnkey.nix): autologin to the `coderbox`
