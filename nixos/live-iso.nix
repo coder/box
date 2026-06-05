@@ -12,7 +12,7 @@
 #
 #   make live-ephemeral-iso
 #   # or: nix build .#nixosConfigurations.live.config.system.build.isoImage
-#   # → result/iso/coder-box-live-*.iso  (flash with `dd`, Ventoy, etc.)
+#   # → result/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
 #
 # This module is imported only by hosts/live/default.nix and is independent of
 # the regular disk-install flow (nixos/install.sh, disko, nixos-facter). It
@@ -46,7 +46,7 @@
   # Prefix of the generated file name (result/iso/<baseName>-<version>-<arch>.iso).
   # iso-image.nix already sets image.baseName ("nixos-<version>-<arch>"), so
   # override with mkForce to win over that definition.
-  image.baseName            = lib.mkForce "coder-box-live";
+  image.baseName            = lib.mkForce "coder-box-appliance";
 
   # ── Boot loader: let iso-image.nix own it ────────────────────────────────────
   # configuration.nix sets these for installed UEFI machines; force them off so

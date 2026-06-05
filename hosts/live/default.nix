@@ -5,7 +5,7 @@
 # Build the bootable ISO with:
 #
 #   nix build .#nixosConfigurations.live.config.system.build.isoImage
-#   # → result/iso/coder-box-live-*.iso
+#   # → result/iso/coder-box-appliance-*.iso
 #
 # Unlike the install hosts (coder-thinkcentre, qemu-arm64), this host does NOT
 # import nixos/disko-standard.nix, hardware-configuration.nix, or facter.json:

@@ -160,7 +160,7 @@ ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
 aarch64 ISO is EFI-only). Flash it (it's isohybrid) and boot:
 
 ```sh
-sudo dd if=result/iso/coder-box-live-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
+sudo dd if=result/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 ### Persistent disk image (`persistent-disk`)
