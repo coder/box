@@ -185,14 +185,14 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     k3s-podman.nix              # k3s + rootless Podman socket
     screenconnect.nix           # ScreenConnect remote access client
     box-turnkey.nix             # shared turn-key bits for prebuilt images (login + Coder bootstrap)
-    live-iso.nix                # ephemeral live "Box" ISO module (imported by hosts/live)
+    live-iso.nix                # ephemeral live "Box" ISO module (imported by hosts/_appliance_iso)
   pkgs/
     coder.nix                   # Coder server package derivation
     coderd-provider.nix         # terraform-provider-coderd derivation
   hosts/
-    live/                   # `live` host: ephemeral live "Box" ISO; no disko/facter/hardware-config
+    _appliance_iso/         # `_appliance_iso` host: ephemeral live "Box" ISO; no disko/facter/hardware-config
                             #   build: make appliance/iso (or appliance/iso/<arch>)
-    persistent-disk/        # `persistent-disk` host: persistent qcow2/raw disk image (disko image builder)
+    _appliance-disk/        # `_appliance-disk` host: persistent qcow2/raw disk image (disko image builder)
                             #   build: make appliance/qcow2  |  make appliance/raw  (or .../<arch>)
     coder-thinkcentre/      # folder name = hostname; default.nix has a hardware-model header comment
       default.nix               # host module: imports facter/legacy + local.nix + thinkcentre-only services

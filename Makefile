@@ -57,20 +57,20 @@ endef
 
 .PHONY: appliance/iso appliance/qcow2 appliance/raw
 
-# ── appliance/iso — live ephemeral ISO (hosts/live) ──────────────────────────
+# ── appliance/iso — live ephemeral ISO (hosts/_appliance_iso) ────────────────
 appliance/iso:
-	$(call box_build,live,isoImage,,)
+	$(call box_build,_appliance_iso,isoImage,,)
 appliance/iso/%:
-	$(call box_build,live,isoImage,,$*)
+	$(call box_build,_appliance_iso,isoImage,,$*)
 
-# ── appliance/qcow2 — persistent disk image (hosts/persistent-disk) ──────────
+# ── appliance/qcow2 — persistent disk image (hosts/_appliance-disk) ──────────
 appliance/qcow2:
-	$(call box_build,persistent-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,)
+	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,)
 appliance/qcow2/%:
-	$(call box_build,persistent-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,$*)
+	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,$*)
 
-# ── appliance/raw — persistent disk image, dd-able (hosts/persistent-disk) ────
+# ── appliance/raw — persistent disk image, dd-able (hosts/_appliance-disk) ────
 appliance/raw:
-	$(call box_build,persistent-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,)
+	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,)
 appliance/raw/%:
-	$(call box_build,persistent-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,$*)
+	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,$*)

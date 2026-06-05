@@ -1,20 +1,20 @@
 # Persistent "Box" disk image host — "it's just The Box™" on a real disk.
 #
 # Folder name = nixosConfigurations attribute (see flake.nix host
-# auto-discovery), so this host is exposed as `nixosConfigurations.persistent-disk`.
-# Unlike the live ISO (hosts/live), this builds a *persistent* disk image
-# (qcow2 or raw) using disko's image builder: it carries the real on-disk GPT
-# layout (1 GB ESP + ext4 root from nixos/disko-standard.nix) and state
+# auto-discovery), so this host is exposed as `nixosConfigurations._appliance-disk`.
+# Unlike the live ISO (hosts/_appliance_iso), this builds a *persistent* disk
+# image (qcow2 or raw) using disko's image builder: it carries the real on-disk
+# GPT layout (1 GB ESP + ext4 root from nixos/disko-standard.nix) and state
 # survives reboots, exactly like a machine you ran nixos/install.sh on.
 #
 # Build (the format is chosen at build time, see Makefile / README):
 #
-#   make persistent-disk/qcow2                 # qcow2 for this machine's arch
-#   make persistent-disk/raw                   # raw  (dd-able straight to a drive)
-#   make persistent-disk/qcow2/aarch64-linux   # cross-arch (needs a matching builder)
+#   make appliance/qcow2                 # qcow2 for this machine's arch
+#   make appliance/raw                   # raw  (dd-able straight to a drive)
+#   make appliance/qcow2/aarch64-linux   # cross-arch (needs a matching builder)
 #
 #   # without make, e.g. a raw image:
-#   nix build .#nixosConfigurations.persistent-disk.config.system.build.diskoImages
+#   nix build .#nixosConfigurations._appliance-disk.config.system.build.diskoImages
 #   # (override disko.imageBuilder.imageFormat = "qcow2" for qcow2)
 #
 # This host is independent of nixos/install.sh; it shares the disk LAYOUT with
@@ -29,6 +29,11 @@
     ../../nixos/disko-standard.nix   # 1 GB ESP + ext4 root single-disk layout
     ../../nixos/box-turnkey.nix      # shared turn-key config (login + Coder bootstrap)
   ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
+
+  # flake.nix defaults networking.hostName to the folder name, but
+  # "_appliance-disk" is not a valid hostname (must start with an alphanumeric).
+  # Use a valid appliance hostname.
+  networking.hostName = lib.mkForce "appliance-disk";
 
   # disko writes the image for this device node; /dev/vda is the virtio disk a
   # built image is partitioned against. The on-disk filesystems mount by LABEL

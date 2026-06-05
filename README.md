@@ -40,7 +40,7 @@ nixos/
   k3s-podman.nix           # k3s + rootless Podman socket
   screenconnect.nix        # optional ScreenConnect remote access client
   box-turnkey.nix          # shared turn-key bits for prebuilt images (login + Coder bootstrap)
-  live-iso.nix             # ephemeral live ISO module (hosts/live)
+  live-iso.nix             # ephemeral live ISO module (hosts/_appliance_iso)
 pkgs/
   coder.nix                # custom Coder server package
   coderd-provider.nix      # terraform-provider-coderd package
@@ -52,9 +52,9 @@ hosts/
     local.nix              # gitignored: admin creds, secrets, SSH users
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
-  live/                    # `live` host: ephemeral live "Box" ISO (no disk install)
+  _appliance_iso/          # `_appliance_iso` host: ephemeral live "Box" ISO (no disk install)
     default.nix            # imports nixos/live-iso.nix only (no disko/facter/hardware-config)
-  persistent-disk/         # `persistent-disk` host: persistent qcow2/raw disk image
+  _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
     default.nix            # imports disko-standard.nix + box-turnkey.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
@@ -160,7 +160,7 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 
 The live root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
-discarded on reboot**. `hosts/live/default.nix` imports
+discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
 [`nixos/live-iso.nix`](nixos/live-iso.nix) (which pulls in `box-turnkey.nix`) —
 **no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
 The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
@@ -176,7 +176,7 @@ sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M sta
 Built with [disko](https://github.com/nix-community/disko)'s image builder, so
 it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
 ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
-`install.sh` on. `hosts/persistent-disk/default.nix` imports
+`install.sh` on. `hosts/_appliance-disk/default.nix` imports
 `disko-standard.nix` + `box-turnkey.nix`.
 
 - **`qcow2`** — boot it directly in QEMU/libvirt/UTM. A qcow2 is a container

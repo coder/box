@@ -1,0 +1,29 @@
+# Live "Box" ISO appliance host — "it's just The Box™", not an installer.
+#
+# Folder name = nixosConfigurations attribute (see flake.nix host
+# auto-discovery), so this host is exposed as `nixosConfigurations._appliance_iso`.
+# It's normally built via the Makefile rather than by attribute:
+#
+#   make appliance/iso          # → out/appliance-iso/iso/coder-box-appliance-*.iso
+#   # equivalently:
+#   nix build .#nixosConfigurations._appliance_iso.config.system.build.isoImage
+#
+# Unlike the install hosts (coder-thinkcentre, qemu-arm64), this host does NOT
+# import nixos/disko-standard.nix, hardware-configuration.nix, or facter.json:
+# the live root filesystem is the squashfs + tmpfs overlay provided by
+# nixos/live-iso.nix. All of the live-specific wiring lives in that module.
+#
+# This host is independent of nixos/install.sh and never participates in the
+# disk-install flow; adding it changes nothing for disko/nixos-install installs.
+
+{ lib, ... }:
+
+{
+  imports = [ ../../nixos/live-iso.nix ]
+    ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
+
+  # flake.nix defaults networking.hostName to the folder name, but
+  # "_appliance_iso" is not a valid hostname (must start with an alphanumeric;
+  # underscores are only allowed mid-name). Use a valid appliance hostname.
+  networking.hostName = lib.mkForce "appliance-iso";
+}
