@@ -36,6 +36,12 @@
   # node differs (sda/nvme0n1/etc.).
   disko.devices.disk.main.device = lib.mkForce "/dev/vda";
 
+  # Output file name: disko defaults imageName to the disk attr name ("main"),
+  # which would produce main.raw / main.qcow2. Name it after the appliance so
+  # the built image is coder-box-appliance.raw / .qcow2 (matches the ISO's
+  # image.baseName).
+  disko.devices.disk.main.imageName = lib.mkForce "coder-box-appliance";
+
   # The image is built offline in a VM with no EFI variable store, so install
   # the bootloader without touching EFI variables. systemd-boot (enabled by
   # default in configuration.nix) also writes the removable EFI fallback path

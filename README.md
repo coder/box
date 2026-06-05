@@ -141,6 +141,13 @@ make appliance/qcow2/aarch64-linux
 make appliance/raw/x86_64
 ```
 
+Each target drops a `--out-link` (GC-root symlink) in `./out/` named after the
+target — e.g. `out/appliance-iso`, `out/appliance-raw-aarch64-linux` — pointing
+straight at the built image in the Nix store (no copy; `./out` is gitignored).
+The ISO is then at `out/appliance-iso/iso/coder-box-appliance-*.iso`, and a disk
+image at `out/appliance-raw/coder-box-appliance.raw` (or
+`out/appliance-qcow2/coder-box-appliance.qcow2`).
+
 The turn-key login + Coder admin bootstrap shared by both flavours live in
 [`nixos/box-turnkey.nix`](nixos/box-turnkey.nix): autologin to the `coderbox`
 desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
@@ -160,7 +167,7 @@ ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
 aarch64 ISO is EFI-only). Flash it (it's isohybrid) and boot:
 
 ```sh
-sudo dd if=result/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
+sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 ### Persistent disk image (`persistent-disk`)

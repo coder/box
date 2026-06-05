@@ -42,8 +42,16 @@ norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 #   $(2) = system.build.<attr>  (isoImage | diskoImages)
 #   $(3) = extra module fields  (nix attrset body, may be empty)
 #   $(4) = arch token           (empty = builder's native arch)
+# The built image lives in /nix/store (always — that's how Nix works), but
+# `--out-link` plants a GC-root symlink to it under ./out (named after the
+# target, e.g. out/appliance-iso, out/appliance-raw-aarch64-linux). That's the
+# native, non-copy way to surface the result in the repo: ./out/<link> points
+# straight at the store path, and being a GC root it won't be garbage-collected.
+# ./out is gitignored.
 define box_build
-	$(NIX) build --impure --no-write-lock-file --print-out-paths --expr \
+	@mkdir -p out
+	$(NIX) build --impure --no-write-lock-file --print-out-paths \
+	  --out-link 'out/$(subst /,-,$@)' --expr \
 	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; $(3) } ]; }).config.system.build.$(2)'
 endef
 

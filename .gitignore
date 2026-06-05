@@ -3,3 +3,4 @@ hosts/*/local.nix
 *.tfstate*
 .terraform/
 *.bak
+out/
