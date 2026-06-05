@@ -1,142 +1,139 @@
 # hosts/incus-vm — Running box on a headless host
 
-This directory holds the NixOS module and template `default.nix` for running box
-on any **headless host** — Incus VM, a bare-metal machine like a ThinkStation, or
-any other server that doesn't need the KDE desktop stack.
+## What box does
 
-`incus-vm.nix` handles everything that differs from a normal bare-metal desktop host:
+Box turns a NixOS machine into a **self-contained Coder deployment**. After
+`nixos-rebuild switch`, the machine runs:
 
-- QEMU guest agents and virtio drivers (via the upstream `incus-virtual-machine.nix`
-  profile) — skip this import for a bare-metal host
+- **Coder server** — full control plane, accessible over a Tailscale tunnel or
+  a configured external URL
+- **PostgreSQL** — Coder's database, managed by the box flake
+- **k3s + sysbox** (optional) — single-node Kubernetes cluster where Coder
+  provisions workspaces as pods; sysbox-runc gives each pod its own Docker daemon
+  without privileged mode
+- **template-sync** — an activation hook that runs `terraform apply` on
+  `coderd/` at every `nixos-rebuild switch`, keeping Coder templates in sync with
+  the repo automatically
+
+The result: SSH or `coder ssh` into the machine, and you have a working Coder
+instance. Workspace pods run on the same node via k3s. No separate infrastructure
+required.
+
+---
+
+## What this directory provides
+
+`incus-vm.nix` adapts the base box config for a headless VM or server:
+
+- Imports the upstream `incus-virtual-machine.nix` profile (QEMU guest agents,
+  virtio drivers) — skip this for bare-metal
 - `systemd-networkd` DHCP on `enp5s0` (the virtio NIC Incus assigns to x86_64 VMs)
-- Disables the KDE / PipeWire / printing / Avahi stack that `configuration.nix`
-  enables by default — a headless host only needs Coder + PostgreSQL
+- Disables the KDE / PipeWire / printing / Avahi stack — a headless host only
+  needs Coder + PostgreSQL
 
-`default.nix` is the per-host entrypoint. Copy it to `hosts/<hostname>/` and
-import it from the flake (auto-discovered by hostname).
+`default.nix` is the per-host entrypoint that imports `incus-vm.nix` plus the
+two runtime files from `/etc/nixos/` (see below).
+
+The same pattern works for bare-metal machines (ThinkStation, etc.) — just skip
+`incus-vm.nix` or replace it with your own hardware module.
 
 ---
 
 ## Relationship to the incus-nixos registry template
 
 [`registry.coder.com/templates/bpmct/incus-nixos`](https://registry.coder.com/templates/bpmct/incus-nixos)
-is a separate, standalone Coder workspace template. It provisions a plain NixOS VM
-as a Coder workspace using `nixos-rebuild switch` via `incus exec`. It does **not**
-use this flake or any part of the box stack — it writes its own minimal
-`configuration.nix` and `coder.nix` at first boot.
-
-The two are complementary but independent:
+is a **separate, unrelated** Coder workspace template. It provisions a plain NixOS
+VM as a Coder *workspace* (something you SSH into to do work), using
+`nixos-rebuild switch` via `incus exec`. It writes its own minimal
+`configuration.nix` at first boot and has nothing to do with this flake.
 
 | | `bpmct/incus-nixos` registry template | `hosts/incus-vm/` in this repo |
 |---|---|---|
-| Purpose | Provision any NixOS VM as a Coder workspace | Turn a host into a box provisioner |
-| Uses box flake? | No | Yes — `nixos-rebuild switch --flake /etc/nixos-repo#<hostname>` |
-| Sets up k3s / sysbox? | No | Optional — add to `hosts/<hostname>/default.nix` |
+| What is it? | A Coder workspace template | A box host config |
+| End result | A NixOS VM you work inside | A NixOS machine that *runs* Coder |
+| Uses box flake? | No | Yes |
+| Runs Coder server? | No — runs coder-agent | Yes — full Coder + PostgreSQL + k3s |
 | Who runs it? | Coder Terraform provisioner | You, manually, on the host |
+
+You can use both together: run the `incus-nixos` template from a box host to spin
+up NixOS workspaces, while the host itself is set up with this flake.
 
 ---
 
 ## Manual setup: fresh NixOS host → box
 
-These steps work for an Incus VM **and** for a bare-metal machine (ThinkStation,
-etc.). The only difference is which extra modules you import in `default.nix`.
+These steps work for an Incus VM provisioned by the `incus-nixos` template (or
+any other NixOS VM) **and** for bare-metal machines.
+
+> **Note:** A stock NixOS image does not have `git` installed. Use
+> `nix-shell -p git` to get it temporarily for the clone step, or add it to the
+> system environment first.
 
 ### 1. Clone the repo
 
 ```sh
-git clone https://github.com/coder/box /etc/nixos-repo
+nix-shell -p git --run "git clone https://github.com/coder/box /etc/nixos-repo"
 ```
 
 ### 2. Create the host directory
 
-The flake auto-discovers hosts by folder name. The folder name must match the
-machine's hostname (`hostname -s`):
+The flake auto-discovers hosts by folder name — the folder name must match
+`hostname -s`:
 
 ```sh
 HOSTNAME=$(hostname -s)
 mkdir -p /etc/nixos-repo/hosts/$HOSTNAME
 
-# For an Incus VM — copy the incus-vm template:
+# For an Incus VM:
 cp /etc/nixos-repo/hosts/incus-vm/default.nix \
    /etc/nixos-repo/hosts/$HOSTNAME/default.nix
 cp /etc/nixos-repo/hosts/incus-vm/incus-vm.nix \
    /etc/nixos-repo/hosts/$HOSTNAME/incus-vm.nix
 
-# For a bare-metal host — start from a different base or write your own default.nix.
-# See hosts/qemu-arm64/ for an example of the bare-metal layout.
+# For bare-metal — write your own default.nix or copy from another host.
+# See hosts/qemu-arm64/ for an example layout.
 
-# Stage the new host dir so the flake can discover it.
-# The flake uses builtins.readDir on the git tree, so untracked files are invisible.
+# Stage the files — the flake's builtins.readDir only sees tracked files.
 git -C /etc/nixos-repo add hosts/$HOSTNAME/
 ```
 
-### 3. Write the runtime config files
+### 3. Enable k3s (required for workspace provisioning)
 
-These files live outside the flake tree so they can carry secrets and
-machine-specific values without being committed.
-
-**`/etc/nixos/incus.nix`** — sets the hostname (Incus VMs get this written
-automatically by `incus-virtual-machine.nix`; create it manually on bare metal):
+Edit `hosts/$HOSTNAME/default.nix` and add:
 
 ```nix
+# sysbox-runc — each workspace pod gets its own Docker daemon (no privileged mode)
+services.coder-nixos.k3s-sysbox.enable = true;
+```
+
+Or for the lighter rootless-Podman variant:
+
+```nix
+services.coder-nixos.k3s.enable = true;
+```
+
+> Only enable one. `k3s-sysbox` is required for the `k3s-sysbox` workspace
+> template; `k3s` works with `k3s-podman` and `k3s-dev`.
+
+### 4. Write the runtime hostname file
+
+This file lives outside the flake so it doesn't need to be committed. On an
+Incus VM provisioned by the `incus-nixos` template, `/etc/nixos/incus.nix` is
+already written by `incus-virtual-machine.nix`. For bare-metal or a fresh VM,
+create it manually:
+
+```sh
+cat > /etc/nixos/incus.nix << 'EOF'
 { lib, ... }:
 {
   networking.hostName = lib.mkForce "your-hostname";
 }
+EOF
 ```
 
-**`/etc/nixos/coder.nix`** — declares the workspace user and coder-agent service:
-
-```nix
-{ pkgs, ... }:
-{
-  users.users.coder = {
-    isNormalUser = true;
-    uid          = 1000;
-    home         = "/home/coder";
-    shell        = pkgs.bash;
-    extraGroups  = [ "wheel" ];
-  };
-  security.sudo.wheelNeedsPassword = false;
-
-  systemd.services.coder-agent = {
-    description = "Coder Agent";
-    after       = [ "network-online.target" ];
-    wants       = [ "network-online.target" ];
-    wantedBy    = [ "multi-user.target" ];
-    serviceConfig = {
-      User            = "coder";
-      EnvironmentFile = "/opt/coder/init.env";
-      ExecStart       = "/opt/coder/init";
-      Restart         = "always";
-      RestartSec      = 10;
-    };
-  };
-}
-```
-
-### 4. Enable k3s (optional)
-
-Edit `hosts/<hostname>/default.nix` and add one of:
-
-```nix
-# sysbox-runc — required for the k3s-sysbox workspace template (full Docker per workspace)
-services.coder-nixos.k3s-sysbox.enable = true;
-```
-
-```nix
-# rootless Podman — lighter option, works with k3s-podman and k3s-dev templates
-services.coder-nixos.k3s.enable = true;
-```
-
-> `k3s-sysbox` and `k3s` use different option names to avoid conflicts — only
-> enable one.
-
-> **Note:** `k3s-sysbox` requires `rsync` on the host. `nixos/k3s-sysbox.nix`
-> includes it in `environment.systemPackages` automatically. If rsync is absent,
-> `sysbox-mgr` exits at startup with
-> `preflight check failed: rsync is not installed on host` and pods stay stuck in
-> `ContainerCreating`.
+> `/etc/nixos/coder.nix` is **not** needed here. That file is for the
+> `coder-agent` service on workspace VMs. The box host runs the Coder *server*,
+> not an agent.
 
 ### 5. Apply
 
@@ -144,5 +141,38 @@ services.coder-nixos.k3s.enable = true;
 nixos-rebuild switch --flake /etc/nixos-repo#$(hostname -s) --impure
 ```
 
-`--impure` is required because `/etc/nixos/incus.nix` and `/etc/nixos/coder.nix`
-live outside the flake tree at absolute paths.
+`--impure` is required because `/etc/nixos/incus.nix` lives outside the flake
+tree. This will build and activate: Coder server, PostgreSQL, k3s, sysbox,
+template-sync, and all supporting services.
+
+### 6. Bootstrap the admin user
+
+After the first `nixos-rebuild switch`, the Coder server is up but has no users.
+Complete setup via the first-run wizard:
+
+```sh
+# The tunnel URL is printed in the Coder server logs:
+journalctl -u coder --no-pager | grep "View the Web UI"
+```
+
+Open that URL in a browser and create the admin user. Or use the CLI:
+
+```sh
+CODER_URL=http://localhost:3000 coder login http://localhost:3000
+```
+
+Once logged in, `template-sync` will succeed on the next `nixos-rebuild switch`
+and push the workspace templates (`k3s-sysbox`, `k3s-podman`, `k3s-dev`,
+`coder-cli`) automatically.
+
+To automate first-run on future machines, set these in the host's NixOS config
+(e.g. via a secret manager or environment file):
+
+```
+CODER_ADMIN_EMAIL=admin@example.com
+CODER_ADMIN_USERNAME=admin
+CODER_ADMIN_PASSWORD=...
+```
+
+The `coder-init-admin` service reads these at boot and creates the user + mints
+a long-lived session token for template-sync automatically.
