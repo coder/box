@@ -43,10 +43,12 @@
   isoImage.makeBiosBootable = pkgs.stdenv.hostPlatform.isx86;
   isoImage.makeUsbBootable  = true;  # `dd` straight to a USB stick and boot
   isoImage.volumeID         = "BOX_LIVE";
-  # Prefix of the generated file name (result/iso/<baseName>-<version>-<arch>.iso).
-  # iso-image.nix already sets image.baseName ("nixos-<version>-<arch>"), so
-  # override with mkForce to win over that definition.
-  image.baseName            = lib.mkForce "coder-box-appliance";
+  # ISO file name. iso-image.nix derives isoName from image.baseName as
+  # "<baseName>.iso", and defaults baseName to "nixos-<version>-<arch>". We
+  # override baseName (mkForce, to win over that default) but keep the arch
+  # suffix so the file is e.g. coder-box-appliance-aarch64-linux.iso — the arch
+  # is visible in the name and x86_64/aarch64 ISOs don't collide in ./out.
+  image.baseName            = lib.mkForce "coder-box-appliance-${pkgs.stdenv.hostPlatform.system}";
 
   # ── Boot loader: let iso-image.nix own it ────────────────────────────────────
   # configuration.nix sets these for installed UEFI machines; force them off so
