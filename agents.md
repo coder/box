@@ -191,9 +191,9 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     coderd-provider.nix         # terraform-provider-coderd derivation
   hosts/
     live/                   # `live` host: ephemeral live "Box" ISO; no disko/facter/hardware-config
-                            #   build: make live-ephemeral-iso (or .../<arch>)
+                            #   build: make appliance/iso (or appliance/iso/<arch>)
     persistent-disk/        # `persistent-disk` host: persistent qcow2/raw disk image (disko image builder)
-                            #   build: make persistent-disk/qcow2  |  make persistent-disk/raw  (or .../<arch>)
+                            #   build: make appliance/qcow2  |  make appliance/raw  (or .../<arch>)
     coder-thinkcentre/      # folder name = hostname; default.nix has a hardware-model header comment
       default.nix               # host module: imports facter/legacy + local.nix + thinkcentre-only services
       hardware-configuration.nix   # legacy fallback (used until facter.json exists)

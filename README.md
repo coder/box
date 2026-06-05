@@ -29,7 +29,7 @@ NixOS configuration for Coder demo and workshop boxes.
 flake.nix                  # entry point: nixosConfigurations.<host> per machine
 flake.lock                 # pinned nixpkgs / disko / nixos-facter-modules
 configuration.nix          # shared NixOS config (all machines)
-Makefile                   # image build targets: live-ephemeral-iso, persistent-disk/{qcow2,raw}
+Makefile                   # appliance build targets: appliance/{iso,qcow2,raw}[/<arch>]
 local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
 .gitignore                 # ignores hosts/*/local.nix
 nixos/
@@ -122,20 +122,23 @@ image flavours build the *exact same* configured system — KDE Plasma, the Code
 server, k3s, Podman, the bundled templates — with admin bootstrap and template
 deploy happening on boot just like a real install. Neither is an installer.
 
-| Flavour | Host | State | Build |
+These prebuilt images are called **appliances** (the box, prebuilt — no
+`install.sh`). Build them with `make appliance/<format>`:
+
+| Format | Host | State | Build |
 |---|---|---|---|
-| **Live ISO** (ephemeral) | `live` | tmpfs overlay — wiped on reboot | `make live-ephemeral-iso` |
-| **Persistent disk** (qcow2) | `persistent-disk` | persists across reboots | `make persistent-disk/qcow2` |
-| **Persistent disk** (raw) | `persistent-disk` | persists across reboots | `make persistent-disk/raw` |
+| **iso** (live, ephemeral) | `live` | tmpfs overlay — wiped on reboot | `make appliance/iso` |
+| **qcow2** (persistent disk) | `persistent-disk` | persists across reboots | `make appliance/qcow2` |
+| **raw** (persistent disk) | `persistent-disk` | persists across reboots | `make appliance/raw` |
 
 All builds need a Linux machine with Nix + flakes. Every target also takes an
 architecture suffix (short names are normalized to `*-linux`); cross-arch
 builds need a matching builder (native remote builder or binfmt/QEMU):
 
 ```sh
-make live-ephemeral-iso/aarch64-linux
-make persistent-disk/qcow2/aarch64-linux
-make persistent-disk/raw/x86_64
+make appliance/iso/aarch64-linux
+make appliance/qcow2/aarch64-linux
+make appliance/raw/x86_64
 ```
 
 The turn-key login + Coder admin bootstrap shared by both flavours live in
