@@ -2,7 +2,7 @@
 #
 # Folder name = nixosConfigurations attribute (see flake.nix host
 # auto-discovery), so this host is exposed as `nixosConfigurations._appliance-disk`.
-# Unlike the live ISO (hosts/_appliance_iso), this builds a *persistent* disk
+# Unlike the appliance ISO (hosts/_appliance_iso), this builds a *persistent* disk
 # image (qcow2 or raw) using disko's image builder: it carries the real on-disk
 # GPT layout (1 GB ESP + ext4 root from nixos/disko-standard.nix) and state
 # survives reboots, exactly like a machine you ran nixos/install.sh on.
@@ -19,15 +19,15 @@
 #
 # This host is independent of nixos/install.sh; it shares the disk LAYOUT with
 # real installs (disko-standard.nix) but is never itself part of the install
-# flow. The turn-key login + Coder admin bootstrap (shared with the live ISO)
-# live in nixos/box-turnkey.nix.
+# flow. The turn-key login + Coder admin bootstrap (shared with the appliance ISO)
+# live in nixos/_appliance/box-turnkey.nix.
 
 { lib, pkgs, ... }:
 
 {
   imports = [
     ../../nixos/disko-standard.nix   # 1 GB ESP + ext4 root single-disk layout
-    ../../nixos/box-turnkey.nix      # shared turn-key config (login + Coder bootstrap)
+    ../../nixos/_appliance/box-turnkey.nix   # shared turn-key config (login + Coder bootstrap)
   ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get

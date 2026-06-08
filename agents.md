@@ -184,8 +184,9 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     k3s-sysbox.nix              # k3s + sysbox runtime
     k3s-podman.nix              # k3s + rootless Podman socket
     screenconnect.nix           # ScreenConnect remote access client
-    box-turnkey.nix             # shared turn-key bits for prebuilt images (login + Coder bootstrap)
-    live-iso.nix                # ephemeral live "Box" ISO module (imported by hosts/_appliance_iso)
+    _appliance/                 # prebuilt-appliance modules (ISO + persistent disk)
+      box-turnkey.nix           # shared turn-key bits for appliances (login + Coder bootstrap)
+      live-iso.nix              # ephemeral appliance ISO module (imported by hosts/_appliance_iso)
   pkgs/
     coder.nix                   # Coder server package derivation
     coderd-provider.nix         # terraform-provider-coderd derivation

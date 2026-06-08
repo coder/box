@@ -1,9 +1,9 @@
 # Shared "turn-key" Box™ config — the bits that make an image boot straight
 # into a fully-configured, ready-to-use Coder box with no install step.
 #
-# Imported by both image flavours:
-#   - nixos/live-iso.nix         (live, ephemeral ISO: hosts/live)
-#   - hosts/persistent-disk/     (persistent disk image: qcow2 / raw)
+# Imported by both appliance flavours:
+#   - nixos/_appliance/live-iso.nix   (ephemeral appliance ISO: hosts/_appliance_iso)
+#   - hosts/_appliance-disk/          (persistent disk image: qcow2 / raw)
 #
 # On real installs these settings come from nixos/install.sh + the gitignored
 # hosts/<host>/local.nix it generates. The image flavours have no install step,

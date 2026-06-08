@@ -3,7 +3,7 @@
 # An "appliance" is the box prebuilt as a bootable image (no nixos/install.sh):
 # it boots straight into the fully-configured Coder box. Three formats:
 #
-#   make appliance/iso        # live ISO  (tmpfs overlay; state wiped on reboot)
+#   make appliance/iso        # appliance ISO  (tmpfs overlay; state wiped on reboot)
 #   make appliance/qcow2      # disk image (persistent; boots in QEMU/libvirt)
 #   make appliance/raw        # disk image (persistent; dd-able to a drive)
 #
@@ -57,7 +57,7 @@ endef
 
 .PHONY: appliance/iso appliance/qcow2 appliance/raw
 
-# ── appliance/iso — live ephemeral ISO (hosts/_appliance_iso) ────────────────
+# ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:
 	$(call box_build,_appliance_iso,isoImage,,)
 appliance/iso/%:

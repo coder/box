@@ -1,26 +1,27 @@
-# Live "Box" ISO module — "it's just The Box™", not an installer.
+# Appliance ISO module — "it's just The Box™", not an installer.
 #
-# Turns the shared Coder box configuration into a bootable *ephemeral* live ISO
-# that runs entirely from the USB/CD + RAM, with no disk install. Booting it
+# Turns the shared Coder box configuration into a bootable *ephemeral* appliance
+# ISO that runs entirely from the USB/CD + RAM, with no disk install. Booting it
 # gives the same system the on-disk install produces (KDE, Coder server, k3s,
 # Podman, the bundled templates, all started automatically) — but the root
 # filesystem is a squashfs + tmpfs overlay, so all state is discarded on
-# reboot. For a *persistent* image (state survives reboots) build the
-# persistent-disk host instead (qcow2 / raw); see the Makefile / README.
+# reboot. For a *persistent* appliance (state survives reboots) build the
+# _appliance-disk host instead (qcow2 / raw); see the Makefile / README.
 #
-# Build (folder name `live` => nixosConfigurations.live, see flake.nix):
+# Build (hosts/_appliance_iso => nixosConfigurations._appliance_iso, see flake.nix):
 #
-#   make live-ephemeral-iso
-#   # or: nix build .#nixosConfigurations.live.config.system.build.isoImage
-#   # → result/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
+#   make appliance/iso
+#   # or: nix build .#nixosConfigurations._appliance_iso.config.system.build.isoImage
+#   # → out/appliance-iso/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
 #
-# This module is imported only by hosts/live/default.nix and is independent of
-# the regular disk-install flow (nixos/install.sh, disko, nixos-facter). It
-# imports NO disko / hardware-configuration.nix / facter.json: the live root is
-# the squashfs + tmpfs overlay that nixpkgs' iso-image.nix sets up.
+# This module is imported only by hosts/_appliance_iso/default.nix and is
+# independent of the regular disk-install flow (nixos/install.sh, disko,
+# nixos-facter). It imports NO disko / hardware-configuration.nix / facter.json:
+# the appliance root is the squashfs + tmpfs overlay that nixpkgs' iso-image.nix
+# sets up.
 #
-# The turn-key login + Coder admin bootstrap (shared with the persistent-disk
-# image) live in nixos/box-turnkey.nix.
+# The turn-key login + Coder admin bootstrap (shared with the _appliance-disk
+# image) live in nixos/_appliance/box-turnkey.nix.
 
 { config, lib, pkgs, modulesPath, ... }:
 
@@ -38,7 +39,7 @@
   # ── ISO image settings ──────────────────────────────────────────────────────
   isoImage.makeEfiBootable  = true;  # boot on UEFI machines
   # Legacy BIOS boot uses syslinux, which is x86-only. Enable it just for x86
-  # so the same module also evaluates/builds for an aarch64 live ISO (which
+  # so the same module also evaluates/builds for an aarch64 appliance ISO (which
   # boots via EFI only). isx86 covers both i686 and x86_64.
   isoImage.makeBiosBootable = pkgs.stdenv.hostPlatform.isx86;
   isoImage.makeUsbBootable  = true;  # `dd` straight to a USB stick and boot

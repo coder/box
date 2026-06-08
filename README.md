@@ -39,8 +39,9 @@ nixos/
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
   k3s-podman.nix           # k3s + rootless Podman socket
   screenconnect.nix        # optional ScreenConnect remote access client
-  box-turnkey.nix          # shared turn-key bits for prebuilt images (login + Coder bootstrap)
-  live-iso.nix             # ephemeral live ISO module (hosts/_appliance_iso)
+  _appliance/              # prebuilt-appliance modules (ISO + persistent disk)
+    box-turnkey.nix        # shared turn-key bits for appliances (login + Coder bootstrap)
+    live-iso.nix           # ephemeral appliance ISO module (hosts/_appliance_iso)
 pkgs/
   coder.nix                # custom Coder server package
   coderd-provider.nix      # terraform-provider-coderd package
@@ -52,10 +53,10 @@ hosts/
     local.nix              # gitignored: admin creds, secrets, SSH users
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
-  _appliance_iso/          # `_appliance_iso` host: ephemeral live "Box" ISO (no disk install)
-    default.nix            # imports nixos/live-iso.nix only (no disko/facter/hardware-config)
+  _appliance_iso/          # `_appliance_iso` host: ephemeral appliance ISO (no disk install)
+    default.nix            # imports nixos/_appliance/live-iso.nix (no disko/facter/hardware-config)
   _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
-    default.nix            # imports disko-standard.nix + box-turnkey.nix
+    default.nix            # imports disko-standard.nix + nixos/_appliance/box-turnkey.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
   templates/
@@ -155,18 +156,18 @@ image at `out/appliance-raw/coder-box-appliance-*.raw` (or
 e.g. `coder-box-appliance-aarch64-linux.iso`.
 
 The turn-key login + Coder admin bootstrap shared by both flavours live in
-[`nixos/box-turnkey.nix`](nixos/box-turnkey.nix): autologin to the `coderbox`
+[`nixos/_appliance/box-turnkey.nix`](nixos/_appliance/box-turnkey.nix): autologin to the `coderbox`
 desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 `http://<hostname>.local:3000` (or the `*.try.coder.app` tunnel URL in
 `/etc/motd`). Change these before sharing an image by dropping a gitignored
 `hosts/<host>/local.nix` (same shape as `local.nix.example`).
 
-### Live ISO (`_appliance_iso`)
+### Appliance ISO (`_appliance_iso`)
 
-The live root filesystem is the squashfs + tmpfs overlay from nixpkgs'
+The appliance root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
 discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
-[`nixos/live-iso.nix`](nixos/live-iso.nix) (which pulls in `box-turnkey.nix`) —
+[`nixos/_appliance/live-iso.nix`](nixos/_appliance/live-iso.nix) (which pulls in `box-turnkey.nix`) —
 **no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
 The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
 ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
