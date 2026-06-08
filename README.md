@@ -161,7 +161,7 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 `/etc/motd`). Change these before sharing an image by dropping a gitignored
 `hosts/<host>/local.nix` (same shape as `local.nix.example`).
 
-### Live ISO (`live`)
+### Live ISO (`_appliance_iso`)
 
 The live root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
@@ -201,7 +201,7 @@ ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
 
 Both image hosts are completely separate from the disk-install flow above
 (`nixos/install.sh`, `nixos-facter`); adding them changes nothing for normal
-installs. The `persistent-disk` host shares only the disk *layout*
+installs. The `_appliance-disk` host shares only the disk *layout*
 (`disko-standard.nix`) with real installs, never the install process itself.
 
 ## After install
