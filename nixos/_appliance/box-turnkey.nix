@@ -70,7 +70,7 @@
     description     = "coderbox";
     extraGroups     = [ "networkmanager" "wheel" ];
     packages        = [ pkgs.kdePackages.kate ];
-    initialPassword = "coderbox";
+    initialPassword = "PleaseChangeMe1234";
   };
 
   # coder-init-admin.service reads CODER_ADMIN_* from coder.service's
