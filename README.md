@@ -130,11 +130,11 @@ deploy happening on boot just like a real install. Neither is an installer.
 These prebuilt images are called **appliances** (the box, prebuilt — no
 `install.sh`). Build them with `make appliance/<format>`:
 
-| Format | Host | State | Build |
-|---|---|---|---|
-| **iso** (live, ephemeral) | `live` | tmpfs overlay — wiped on reboot | `make appliance/iso` |
-| **qcow2** (persistent disk) | `persistent-disk` | persists across reboots | `make appliance/qcow2` |
-| **raw** (persistent disk) | `persistent-disk` | persists across reboots | `make appliance/raw` |
+| Format | Host | State | Status | Build |
+|---|---|---|---|---|
+| **iso** (live, ephemeral) | `_appliance_iso` | tmpfs overlay — wiped on reboot | verified | `make appliance/iso` |
+| **qcow2** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/qcow2` |
+| **raw** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/raw` |
 
 All builds need a Linux machine with Nix + flakes. Every target also takes an
 architecture suffix (short names are normalized to `*-linux`); cross-arch
@@ -176,7 +176,14 @@ aarch64 ISO is EFI-only). Flash it (it's isohybrid) and boot:
 sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
-### Persistent disk image (`persistent-disk`)
+### Persistent disk image (`_appliance-disk`)
+
+> [!WARNING]
+> **Untested.** The `qcow2` and `raw` disk-image builds evaluate cleanly and
+> produce a valid build plan, but they have not yet been built end-to-end or
+> boot-tested. The live `appliance/iso` is the only flavour verified to build
+> and boot so far. Treat the disk images as experimental until someone confirms
+> a working build + boot.
 
 Built with [disko](https://github.com/nix-community/disko)'s image builder, so
 it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
