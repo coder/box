@@ -440,8 +440,18 @@ in
             # it can't write the .terraform.lock.hcl that terraform init
             # creates in the working directory. Copy coderd/ into a workdir
             # we own and run terraform there.
+            #
+            # On the appliance images /etc/nixos-repo is a read-only Nix store
+            # path (dirs 0555, files 0444), so `cp -r` reproduces those
+            # read-only perms and `terraform init` then fails writing
+            # .terraform.lock.hcl into the workdir (Permission denied) — which,
+            # under `set -o pipefail`, aborts this service *after* the admin
+            # user + token were already created, so templates silently never
+            # deploy. chmod -R u+w makes the copy writable. (On normal installs
+            # the source is already writable, so this is a harmless no-op.)
             rm -rf "$CODERD_DIR"
             cp -r "$CODERD_SRC" "$CODERD_DIR"
+            chmod -R u+w "$CODERD_DIR"
             COMMIT=$(GIT_DIR=/etc/nixos-repo/.git ${pkgs.git}/bin/git -c safe.directory=/etc/nixos-repo -C /etc/nixos-repo rev-parse --short HEAD 2>/dev/null || echo "unknown")
             export TF_CLI_CONFIG_FILE="${terraformrc}"
             export TF_DATA_DIR="$STATE_DIR/.terraform"
