@@ -43,7 +43,7 @@
   # boots via EFI only). isx86 covers both i686 and x86_64.
   isoImage.makeBiosBootable = pkgs.stdenv.hostPlatform.isx86;
   isoImage.makeUsbBootable  = true;  # `dd` straight to a USB stick and boot
-  isoImage.volumeID         = "BOX_LIVE";
+  isoImage.volumeID         = "CODER_BOX_LIVE";
   # Boot-menu label (both the BIOS/isolinux and EFI/grub entries). The label is
   # "<distroName> <version><appendToMenuLabel>"; the default append is
   # " Installer", which is misleading here since this is the live appliance, not
