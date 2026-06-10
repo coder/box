@@ -1,6 +1,6 @@
 # Coder box — appliance image build targets.
 #
-# An "appliance" is the box prebuilt as a bootable image (no nixos/install.sh):
+# An "appliance" is the box prebuilt as a bootable image (no install.sh):
 # it boots straight into the fully-configured Coder box. Three formats:
 #
 #   make appliance/iso        # appliance ISO  (tmpfs overlay; state wiped on reboot)

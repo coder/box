@@ -15,7 +15,7 @@
 #   # → out/appliance-iso/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
 #
 # This module is imported only by hosts/_appliance_iso/default.nix and is
-# independent of the regular disk-install flow (nixos/install.sh, disko,
+# independent of the regular disk-install flow (install.sh, disko,
 # nixos-facter). It imports NO disko / hardware-configuration.nix / facter.json:
 # the appliance root is the squashfs + tmpfs overlay that nixpkgs' iso-image.nix
 # sets up.

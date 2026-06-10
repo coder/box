@@ -13,7 +13,7 @@
 # the appliance root filesystem is the squashfs + tmpfs overlay provided by
 # nixos/_appliance/live-iso.nix. All of the appliance-ISO wiring lives there.
 #
-# This host is independent of nixos/install.sh and never participates in the
+# This host is independent of install.sh and never participates in the
 # disk-install flow; adding it changes nothing for disko/nixos-install installs.
 
 { lib, ... }:
