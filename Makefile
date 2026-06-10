@@ -62,7 +62,15 @@ define box_build
 	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; $(3) } ]; }).config.system.build.$(2)'
 endef
 
-.PHONY: appliance/iso appliance/qcow2 appliance/raw installer/iso
+.PHONY: installer/iso appliance/iso appliance/qcow2 appliance/raw
+
+# installer/iso is listed first so it's the default goal (bare `make`).
+
+# ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
+installer/iso:
+	$(call box_build,_installer-iso,isoImage,,)
+installer/iso/%:
+	$(call box_build,_installer-iso,isoImage,,$*)
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:
@@ -81,9 +89,3 @@ appliance/raw:
 	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,)
 appliance/raw/%:
 	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,$*)
-
-# ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
-installer/iso:
-	$(call box_build,_installer-iso,isoImage,,)
-installer/iso/%:
-	$(call box_build,_installer-iso,isoImage,,$*)
