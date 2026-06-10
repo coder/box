@@ -31,64 +31,20 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Writable git working copy ──────────────────────────────────────────────
-# install.sh writes generated host files into the repo, and the installed
-# system keeps the repo at /etc/nixos-repo as a *git* repo so users can update
-# with `git pull`. On the normal live-USB flow REPO_DIR is already a writable
-# git clone, so we use it as-is.
-#
-# On the installer/appliance ISO the repo is baked at /etc/nixos-repo, which is
-# a symlink into the read-only Nix store and has no .git: we can neither write
-# into it (`mkdir hosts/<host>` -> "Read-only file system") nor leave a usable
-# git repo on the installed system. So we reproduce, automatically, the manual
-# workaround "copy /etc/nixos-repo to a writable dir, make it a git repo, run
-# install.sh there":
-#   1. copy the baked tree into a writable tmpdir (tmpfs/RAM on a live ISO) —
-#      no full re-download; the repo is already in the image,
-#   2. make it a real git repo with `origin`, and (if online) fast-forward to
-#      the latest upstream so the installed repo has clean history and future
-#      `git pull` Just Works. Offline, keep the baked snapshot as-is.
-# Override the upstream with CODER_BOX_REPO_URL / CODER_BOX_REPO_REF.
-REPO_URL="${CODER_BOX_REPO_URL:-https://github.com/coder/box}"
-REPO_REF="${CODER_BOX_REPO_REF:-main}"
-repo_writable=false
-if [[ -e "$REPO_DIR/.git" ]] && ( : > "$REPO_DIR/.coder-box-write-test" ) 2>/dev/null; then
-  repo_writable=true
-fi
-rm -f "$REPO_DIR/.coder-box-write-test" 2>/dev/null || true
-if ! $repo_writable; then
-  command -v git >/dev/null || { echo "git missing" >&2; exit 1; }
+# ── Writable working copy ──────────────────────────────────────────────────
+# install.sh writes generated host files into the repo (hosts/<host>/...), so
+# REPO_DIR must be writable. On the normal live-USB flow it's a writable git
+# clone. On the installer/appliance ISO the repo is baked at /etc/nixos-repo, a
+# symlink into the read-only Nix store, so writing fails ("Read-only file
+# system"). When REPO_DIR isn't writable, copy it to a writable tmpdir
+# (tmpfs/RAM on a live ISO) and re-exec from there. The copy is a verbatim
+# `cp -a`, so if the baked repo carries a .git the copy keeps it (with its
+# origin) and the installed /etc/nixos-repo can still `git pull`.
+if [[ ! -w "$REPO_DIR" ]]; then
   workdir="$(mktemp -d "${TMPDIR:-/tmp}/coder-box-install.XXXXXX")"
-  echo "=== Repo at $REPO_DIR is read-only / not a git repo ===" >&2
-  echo "=== Copying baked repo to a writable dir at $workdir/box ===" >&2
+  echo "=== Repo at $REPO_DIR is read-only; copying to a writable dir at $workdir/box ===" >&2
   cp -a "$REPO_DIR/." "$workdir/box/"
   chmod -R u+w "$workdir/box"
-  rm -f "$workdir/box/.coder-box-write-test"
-  baked_rev="$(cat /etc/coder-box-rev 2>/dev/null || echo unknown)"
-  git -C "$workdir/box" init -q -b main
-  git -C "$workdir/box" add -A
-  git -C "$workdir/box" \
-    -c user.name="Coder Box installer" \
-    -c user.email="installer@coder.box" \
-    commit -q -m "Coder Box baked image snapshot (upstream rev: ${baked_rev})"
-  git -C "$workdir/box" remote add origin "$REPO_URL"
-  # If online, fast-forward the working copy to the latest upstream so the
-  # installed /etc/nixos-repo has real upstream history (clean `git pull`
-  # afterwards). A `git fetch` of an existing-ish repo transfers deltas, not a
-  # full re-clone. Offline (or fetch fails): keep the baked snapshot — install
-  # still works, but the first `git pull` may need `--rebase` to reconcile.
-  echo "=== Anchoring to upstream $REPO_URL ($REPO_REF) — git fetch (skipped if offline) ===" >&2
-  if git -C "$workdir/box" fetch -q --no-tags origin "$REPO_REF" 2>/dev/null; then
-    git -C "$workdir/box" reset -q --hard FETCH_HEAD
-    git -C "$workdir/box" branch -q --set-upstream-to "origin/$REPO_REF" main 2>/dev/null \
-      || { git -C "$workdir/box" config "branch.main.remote" origin
-           git -C "$workdir/box" config "branch.main.merge" "refs/heads/${REPO_REF}"; }
-    echo "=== Anchored to upstream $REPO_REF (clean git pull on the installed box) ===" >&2
-  else
-    git -C "$workdir/box" config "branch.main.remote" origin
-    git -C "$workdir/box" config "branch.main.merge" "refs/heads/${REPO_REF}"
-    echo "=== Offline: installing the baked snapshot; first 'git pull' may need --rebase ===" >&2
-  fi
   exec "$workdir/box/install.sh" "$@"
 fi
 
@@ -418,14 +374,16 @@ if [[ ! -f "$HOST_DIR/facter.json" ]]; then
   echo "  wrote hosts/$HOSTNAME_ARG/facter.json"
 fi
 
-# local.nix is gitignored, so force-add as intent-to-add; the others normal.
-# REPO_DIR is always a git repo here (the normal flow is a clone; the ISO flow
-# clones upstream above), and a git path flake ignores untracked files, so the
-# freshly written host files must be intent-to-added for the flake to see them.
-git -C "$REPO_DIR" add --intent-to-add -f \
-  "hosts/$HOSTNAME_ARG/default.nix" \
-  "hosts/$HOSTNAME_ARG/facter.json" \
-  "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
+# A git path flake ignores untracked files, so the freshly written host files
+# must be intent-to-added for the flake to see them (local.nix is gitignored, so
+# force-add it). Only meaningful when REPO_DIR is a git repo; the ISO writable
+# copy may have no .git (a non-git path flake already sees every file), so skip.
+if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$REPO_DIR" add --intent-to-add -f \
+    "hosts/$HOSTNAME_ARG/default.nix" \
+    "hosts/$HOSTNAME_ARG/facter.json" \
+    "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
+fi
 
 # ── Validate ───────────────────────────────────────────────────────────────
 echo "  validating flake ..."
