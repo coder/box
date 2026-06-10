@@ -31,6 +31,42 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── Writable git working copy ──────────────────────────────────────────────
+# install.sh writes generated host files into the repo, and the installed
+# system keeps the repo at /etc/nixos-repo as a *git* repo so users can update
+# with `git pull`. On the normal live-USB flow REPO_DIR is already a writable
+# git clone, so we use it as-is.
+#
+# On the installer/appliance ISO, the repo is baked at /etc/nixos-repo, which is
+# a symlink into the read-only Nix store and has no .git: we can neither write
+# into it (`mkdir hosts/<host>` -> "Read-only file system") nor leave a usable
+# git repo on the installed system. So when REPO_DIR is read-only or not a git
+# repo, clone the upstream repo into a writable tmpdir (tmpfs/RAM on a live ISO)
+# and re-exec from there. The clone is a real git repo (origin + tracking
+# branch), so after it's copied to /mnt the installed /etc/nixos-repo supports
+# `git pull`. Override the source with CODER_BOX_REPO_URL / CODER_BOX_REPO_REF
+# (e.g. to install a fork/branch instead of the public main).
+REPO_URL="${CODER_BOX_REPO_URL:-https://github.com/coder/box}"
+REPO_REF="${CODER_BOX_REPO_REF:-main}"
+repo_writable=false
+if [[ -e "$REPO_DIR/.git" ]] && ( : > "$REPO_DIR/.coder-box-write-test" ) 2>/dev/null; then
+  repo_writable=true
+fi
+rm -f "$REPO_DIR/.coder-box-write-test" 2>/dev/null || true
+if ! $repo_writable; then
+  command -v git >/dev/null || { echo "git missing; cannot clone $REPO_URL" >&2; exit 1; }
+  workdir="$(mktemp -d "${TMPDIR:-/tmp}/coder-box-install.XXXXXX")"
+  echo "=== Repo at $REPO_DIR is read-only / not a git repo ===" >&2
+  echo "=== Cloning $REPO_URL ($REPO_REF) into $workdir for a writable git repo ===" >&2
+  if ! git clone --branch "$REPO_REF" "$REPO_URL" "$workdir/box"; then
+    echo "ERROR: failed to clone $REPO_URL ($REPO_REF)." >&2
+    echo "  The installer ISO needs network access to fetch the repo. Override the" >&2
+    echo "  source with CODER_BOX_REPO_URL / CODER_BOX_REPO_REF if needed." >&2
+    exit 1
+  fi
+  exec "$workdir/box/install.sh" "$@"
+fi
+
 # ── Flag parsing ───────────────────────────────────────────────────────────
 HOSTNAME_ARG=""
 HARDWARE_DESC_ARG=""
@@ -358,6 +394,9 @@ if [[ ! -f "$HOST_DIR/facter.json" ]]; then
 fi
 
 # local.nix is gitignored, so force-add as intent-to-add; the others normal.
+# REPO_DIR is always a git repo here (the normal flow is a clone; the ISO flow
+# clones upstream above), and a git path flake ignores untracked files, so the
+# freshly written host files must be intent-to-added for the flake to see them.
 git -C "$REPO_DIR" add --intent-to-add -f \
   "hosts/$HOSTNAME_ARG/default.nix" \
   "hosts/$HOSTNAME_ARG/facter.json" \

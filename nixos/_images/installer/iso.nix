@@ -65,4 +65,19 @@
     Autolock=false
     LockOnResume=false
   '';
+
+  # ── Installer ergonomics ─────────────────────────────────────────────────────
+  # Running `sudo ./install.sh` from the baked /etc/nixos-repo works because the
+  # script detects its repo dir is read-only (a symlink into the read-only Nix
+  # store with no .git) and instead clones the upstream repo into a writable
+  # tmpdir (tmpfs/RAM here) and re-execs from there. That clone is a real git
+  # repo, so the installed /etc/nixos-repo can `git pull` to update. The live
+  # /nix/store is already a writable tmpfs overlay (nixpkgs' iso-image.nix sets
+  # that up), and install.sh builds the system closure straight into the target
+  # disk's /mnt/nix/store, so RAM size isn't the limit.
+  #
+  # Mirror nixpkgs' installation-device.nix low-memory tweak so the kernel's
+  # overcommit heuristics don't spuriously block forks during the install on
+  # low-RAM machines.
+  boot.kernel.sysctl."vm.overcommit_memory" = "1";
 }
