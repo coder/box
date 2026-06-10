@@ -188,8 +188,11 @@ sed_replacement_escape() {
 list_disks() {
   # Whole-block-devices, non-removable, non-loop, non-rom. MODEL is last so an
   # empty model (e.g. virtio /dev/vda) can't shift the TYPE/RM columns.
+  # Skip zram (compressed RAM swap, /dev/zramN) — it reports TYPE=disk RM=0 so
+  # it would otherwise show up as an install target, which is never what we want
+  # (installing onto RAM swap). Also skip device-mapper / md / loop just in case.
   lsblk -d -p -n -b -o NAME,SIZE,RM,TYPE,MODEL \
-    | awk '$4=="disk" && $3=="0" { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
+    | awk '$4=="disk" && $3=="0" && $1 !~ /\/(zram|dm-|md|loop)[0-9]+$/ { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
 }
 
 # ── Gather inputs ──────────────────────────────────────────────────────────

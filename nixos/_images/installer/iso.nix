@@ -18,6 +18,33 @@
 
 { config, lib, pkgs, ... }:
 
+let
+  # Launcher run inside the preopened Konsole: cd into the baked repo, run the
+  # installer as root (passwordless sudo is configured in configuration.nix),
+  # and — whatever happens — drop the user into an interactive bash shell so a
+  # failed install leaves them at a prompt to inspect/retry instead of a dead
+  # terminal. (On success install.sh reboots, so the shell is only reached on
+  # failure or --no-reboot.)
+  installerLauncher = pkgs.writeShellScript "coder-box-installer-launch" ''
+    cd /etc/nixos-repo 2>/dev/null || cd /
+    echo "=== Coder Box installer ==="
+    echo "Running: sudo ./install.sh $*"
+    echo
+    if sudo ./install.sh "$@"; then
+      echo
+      echo "=== install.sh finished ==="
+    else
+      rc=$?
+      echo
+      echo "=== install.sh FAILED (exit $rc) — dropping you into a shell ==="
+      echo "    You are in /etc/nixos-repo. Re-run with: sudo ./install.sh"
+    fi
+    echo
+    # Interactive login-ish shell so the user can debug/retry. exec so closing
+    # the shell closes Konsole.
+    exec ${pkgs.bashInteractive}/bin/bash -i
+  '';
+in
 {
   imports = [
     ../base/iso.nix     # shared ISO mechanics
@@ -33,21 +60,20 @@
   # See ../appliance/iso.nix for why this is mkForce + arch-suffixed.
   image.baseName             = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";
 
-  # ── Auto-launch a full-screen Konsole on login ───────────────────────────────
+  # ── Auto-launch a full-screen Konsole that runs the installer ────────────────
   # box-turnkey.nix autologins straight into the Plasma (X11) desktop. For the
-  # installer we want a terminal front-and-centre, so drop a system-wide XDG
-  # autostart entry that opens Konsole full-screen as soon as the session starts,
-  # with its working directory set to /etc/nixos-repo (the baked coder/box repo)
-  # so the install commands are right there. This is the GUI-on stepping stone
-  # toward the eventual terminal-driven install flow. (--fullscreen and
-  # --workdir are Konsole CLI flags.)
+  # installer we want the install to start on its own: a system-wide XDG
+  # autostart entry opens Konsole full-screen on session start and runs the
+  # installer launcher (`konsole -e <launcher>`), which `sudo ./install.sh`s and
+  # drops to an interactive bash shell if it fails. This is the GUI-on stepping
+  # stone toward the eventual terminal-driven install flow.
   environment.systemPackages = [ pkgs.kdePackages.konsole ];
   environment.etc."xdg/autostart/coder-box-installer-konsole.desktop".text = ''
     [Desktop Entry]
     Type=Application
     Name=Coder Box Installer Console
-    Comment=Open a full-screen terminal for installing coder/box
-    Exec=${pkgs.kdePackages.konsole}/bin/konsole --fullscreen --workdir /etc/nixos-repo
+    Comment=Run the coder/box installer in a full-screen terminal
+    Exec=${pkgs.kdePackages.konsole}/bin/konsole --fullscreen --workdir /etc/nixos-repo -e ${installerLauncher}
     Terminal=false
     X-GNOME-Autostart-enabled=true
     OnlyShowIn=KDE;
@@ -69,12 +95,10 @@
   # ── Installer ergonomics ─────────────────────────────────────────────────────
   # Running `sudo ./install.sh` from the baked /etc/nixos-repo works because the
   # script detects its repo dir is read-only (a symlink into the read-only Nix
-  # store with no .git) and instead clones the upstream repo into a writable
-  # tmpdir (tmpfs/RAM here) and re-execs from there. That clone is a real git
-  # repo, so the installed /etc/nixos-repo can `git pull` to update. The live
-  # /nix/store is already a writable tmpfs overlay (nixpkgs' iso-image.nix sets
-  # that up), and install.sh builds the system closure straight into the target
-  # disk's /mnt/nix/store, so RAM size isn't the limit.
+  # store) and copies it to a writable tmpdir (tmpfs/RAM here) to re-exec from.
+  # The copy keeps the baked .git (if any), so the installed /etc/nixos-repo can
+  # `git pull` to update. install.sh builds the system closure straight into the
+  # target disk's /mnt/nix/store.
   #
   # Mirror nixpkgs' installation-device.nix low-memory tweak so the kernel's
   # overcommit heuristics don't spuriously block forks during the install on
