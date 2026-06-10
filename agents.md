@@ -184,17 +184,22 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     k3s-sysbox.nix              # k3s + sysbox runtime
     k3s-podman.nix              # k3s + rootless Podman socket
     screenconnect.nix           # ScreenConnect remote access client
-    _appliance/                 # prebuilt-appliance modules (ISO + persistent disk)
-      box-turnkey.nix           # shared turn-key bits for appliances (login + Coder bootstrap)
-      live-iso.nix              # ephemeral appliance ISO module (imported by hosts/_appliance_iso)
+    _images/                    # prebuilt-image modules (appliance + installer)
+      box-turnkey.nix           # shared turn-key Coder box (login + Coder bootstrap); all image hosts
+      _base/hardware.nix        # all-hardware (boot on arbitrary hardware)
+      _base/iso.nix             # shared ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
+      _appliance/iso.nix        # appliance ISO module (imported by hosts/_appliance_iso)
+      _installer/iso.nix        # installer ISO module (imported by hosts/_installer-iso)
   pkgs/
     coder.nix                   # Coder server package derivation
     coderd-provider.nix         # terraform-provider-coderd derivation
   hosts/
-    _appliance_iso/         # `_appliance_iso` host: ephemeral live "Box" ISO; no disko/facter/hardware-config
+    _appliance_iso/         # `_appliance_iso` host: ephemeral appliance ISO; no disko/facter/hardware-config
                             #   build: make appliance/iso (or appliance/iso/<arch>)
     _appliance-disk/        # `_appliance-disk` host: persistent qcow2/raw disk image (disko image builder)
                             #   build: make appliance/qcow2  |  make appliance/raw  (or .../<arch>)
+    _installer-iso/         # `_installer-iso` host: installer ISO (ISO only; full GUI box for now)
+                            #   build: make installer/iso (or installer/iso/<arch>)
     coder-thinkcentre/      # folder name = hostname; default.nix has a hardware-model header comment
       default.nix               # host module: imports facter/legacy + local.nix + thinkcentre-only services
       hardware-configuration.nix   # legacy fallback (used until facter.json exists)
