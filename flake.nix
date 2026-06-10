@@ -37,10 +37,12 @@
       forAllSystems = lib.genAttrs systems;
 
       # Each subdirectory of ./hosts that contains a default.nix becomes a
-      # nixosConfigurations entry. The folder name IS the hostname, so
-      # `nixos-rebuild switch --flake .` auto-selects the right config on
-      # the running box without needing `.#<attr>`. Adding a new host means
-      # just creating ./hosts/<hostname>/default.nix; no flake.nix edit.
+      # nixosConfigurations entry. For install hosts the folder name IS the
+      # hostname, so `nixos-rebuild switch --flake .` auto-selects the right
+      # config on the running box without needing `.#<attr>`. Adding a new host
+      # means just creating ./hosts/<hostname>/default.nix; no flake.nix edit.
+      # (Underscore-prefixed folders like _appliance_iso are image builds that
+      # skip the folder-name hostname; see mkHost below.)
       hostNames = lib.attrNames (lib.filterAttrs
         (name: type:
           type == "directory"
@@ -58,8 +60,17 @@
           disko.nixosModules.disko
           nixos-facter-modules.nixosModules.facter
           (./hosts + "/${hostname}")
-          { networking.hostName = lib.mkDefault hostname; }
-        ];
+        ]
+        # Install hosts use their folder name as the hostname so
+        # `nixos-rebuild switch --flake .` auto-selects the right config on the
+        # running box. Underscore-prefixed folders (e.g. _appliance_iso,
+        # _appliance-disk) are image/appliance builds whose names aren't valid
+        # hostnames and aren't installed per-machine; they fall through to the
+        # central default (networking.hostName = "coder-box" in
+        # configuration.nix). mkDefault here (1000) overrides that central
+        # mkOptionDefault (1500) for install hosts.
+        ++ lib.optional (!lib.hasPrefix "_" hostname)
+             { networking.hostName = lib.mkDefault hostname; };
       };
     in {
       nixosConfigurations =

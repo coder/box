@@ -29,6 +29,7 @@ NixOS configuration for Coder demo and workshop boxes.
 flake.nix                  # entry point: nixosConfigurations.<host> per machine
 flake.lock                 # pinned nixpkgs / disko / nixos-facter-modules
 configuration.nix          # shared NixOS config (all machines)
+Makefile                   # appliance build targets: appliance/{iso,qcow2,raw}[/<arch>]
 local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
 .gitignore                 # ignores hosts/*/local.nix
 nixos/
@@ -38,6 +39,9 @@ nixos/
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
   k3s-podman.nix           # k3s + rootless Podman socket
   screenconnect.nix        # optional ScreenConnect remote access client
+  _appliance/              # prebuilt-appliance modules (ISO + persistent disk)
+    box-turnkey.nix        # shared turn-key bits for appliances (login + Coder bootstrap)
+    live-iso.nix           # ephemeral appliance ISO module (hosts/_appliance_iso)
 pkgs/
   coder.nix                # custom Coder server package
   coderd-provider.nix      # terraform-provider-coderd package
@@ -49,6 +53,10 @@ hosts/
     local.nix              # gitignored: admin creds, secrets, SSH users
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
+  _appliance_iso/          # `_appliance_iso` host: ephemeral appliance ISO (no disk install)
+    default.nix            # imports nixos/_appliance/live-iso.nix (no disko/facter/hardware-config)
+  _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
+    default.nix            # imports disko-standard.nix + nixos/_appliance/box-turnkey.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
   templates/
@@ -60,10 +68,15 @@ coderd/
 
 This repo is a Nix flake. `flake.nix` auto-discovers every subdirectory of
 `./hosts/` that contains a `default.nix` and exposes it as
-`nixosConfigurations.<folder-name>`. The folder name is the hostname, so
-`nixos-rebuild switch --flake .` auto-selects the right config on the
-running box. Adding a new host means creating a host folder, no flake.nix
-edit. The installer does this for you.
+`nixosConfigurations.<folder-name>`. For normal install hosts the folder name
+is also the hostname, so `nixos-rebuild switch --flake .` auto-selects the
+right config on the running box. Adding a new host means creating a host
+folder, no flake.nix edit. The installer does this for you.
+
+Hosts whose folder name starts with an underscore (`_appliance_iso`,
+`_appliance-disk`) are image/appliance builds, not per-machine installs: they
+do **not** get the folder-name hostname and instead inherit the central
+default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 
 Two community tools do the heavy lifting:
 
@@ -107,6 +120,90 @@ The installer generates `hosts/<hostname>/{default.nix,local.nix,facter.json}`, 
 > boot.loader.grub = { enable = true; device = "/dev/sda"; };
 > ```
 > And use a BIOS-compatible disko layout instead of `disko-standard.nix`.
+
+## Prebuilt images (The Box™ without `install.sh`)
+
+Sometimes you don't want to run the installer; you just want The Box™. Two
+image flavours build the *exact same* configured system — KDE Plasma, the Coder
+server, k3s, Podman, the bundled templates — with admin bootstrap and template
+deploy happening on boot just like a real install. Neither is an installer.
+
+These prebuilt images are called **appliances** (the box, prebuilt — no
+`install.sh`). Build them with `make appliance/<format>`:
+
+| Format | Host | State | Status | Build |
+|---|---|---|---|---|
+| **iso** (live, ephemeral) | `_appliance_iso` | tmpfs overlay — wiped on reboot | verified | `make appliance/iso` |
+| **qcow2** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/qcow2` |
+| **raw** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/raw` |
+
+All builds need a Linux machine with Nix + flakes. Every target also takes an
+architecture suffix (short names are normalized to `*-linux`); cross-arch
+builds need a matching builder (native remote builder or binfmt/QEMU):
+
+```sh
+make appliance/iso/aarch64-linux
+make appliance/qcow2/aarch64-linux
+make appliance/raw/x86_64
+```
+
+Each target drops a `--out-link` (GC-root symlink) in `./out/` named after the
+target — e.g. `out/appliance-iso`, `out/appliance-raw-aarch64-linux` — pointing
+straight at the built image in the Nix store (no copy; `./out` is gitignored).
+The ISO is then at `out/appliance-iso/iso/coder-box-appliance-*.iso`, and a disk
+image at `out/appliance-raw/coder-box-appliance-*.raw` (or
+`out/appliance-qcow2/coder-box-appliance-*.qcow2`). All names carry the arch,
+e.g. `coder-box-appliance-aarch64-linux.iso`.
+
+The turn-key login + Coder admin bootstrap shared by both flavours live in
+[`nixos/_appliance/box-turnkey.nix`](nixos/_appliance/box-turnkey.nix): autologin to the `coderbox`
+desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
+`http://<hostname>.local:3000` (or the `*.try.coder.app` tunnel URL in
+`/etc/motd`). Change these before sharing an image by dropping a gitignored
+`hosts/<host>/local.nix` (same shape as `local.nix.example`).
+
+### Appliance ISO (`_appliance_iso`)
+
+The appliance root filesystem is the squashfs + tmpfs overlay from nixpkgs'
+`iso-image.nix`, so there's no partition to format or mount and **all state is
+discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
+[`nixos/_appliance/live-iso.nix`](nixos/_appliance/live-iso.nix) (which pulls in `box-turnkey.nix`) —
+**no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
+The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
+ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
+aarch64 ISO is EFI-only). Flash it (it's isohybrid) and boot:
+
+```sh
+sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M status=progress oflag=sync
+```
+
+### Persistent disk image (`_appliance-disk`)
+
+> [!WARNING]
+> **Untested.** The `qcow2` and `raw` disk-image builds evaluate cleanly and
+> produce a valid build plan, but they have not yet been built end-to-end or
+> boot-tested. The live `appliance/iso` is the only flavour verified to build
+> and boot so far. Treat the disk images as experimental until someone confirms
+> a working build + boot.
+
+Built with [disko](https://github.com/nix-community/disko)'s image builder, so
+it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
+ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
+`install.sh` on. `hosts/_appliance-disk/default.nix` imports
+`disko-standard.nix` + `box-turnkey.nix`.
+
+- **`qcow2`** — boot it directly in QEMU/libvirt/UTM. A qcow2 is a container
+  format, so it can **not** be `dd`'d to a drive as-is — convert first
+  (`qemu-img convert -O raw box.qcow2 box.img`) or build the raw image instead.
+- **`raw`** — a plain disk image you can `dd` straight onto a physical drive:
+  ```sh
+  sudo dd if=result/*.img of=/dev/sdX bs=4M status=progress oflag=sync
+  ```
+
+Both image hosts are completely separate from the disk-install flow above
+(`nixos/install.sh`, `nixos-facter`); adding them changes nothing for normal
+installs. The `_appliance-disk` host shares only the disk *layout*
+(`disko-standard.nix`) with real installs, never the install process itself.
 
 ## After install
 
