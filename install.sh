@@ -31,21 +31,22 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Writable git working copy ──────────────────────────────────────────────
+# ── Writable git working copy (offline) ────────────────────────────────────
 # install.sh writes generated host files into the repo, and the installed
 # system keeps the repo at /etc/nixos-repo as a *git* repo so users can update
 # with `git pull`. On the normal live-USB flow REPO_DIR is already a writable
 # git clone, so we use it as-is.
 #
-# On the installer/appliance ISO, the repo is baked at /etc/nixos-repo, which is
+# On the installer/appliance ISO the repo is baked at /etc/nixos-repo, which is
 # a symlink into the read-only Nix store and has no .git: we can neither write
 # into it (`mkdir hosts/<host>` -> "Read-only file system") nor leave a usable
-# git repo on the installed system. So when REPO_DIR is read-only or not a git
-# repo, clone the upstream repo into a writable tmpdir (tmpfs/RAM on a live ISO)
-# and re-exec from there. The clone is a real git repo (origin + tracking
-# branch), so after it's copied to /mnt the installed /etc/nixos-repo supports
-# `git pull`. Override the source with CODER_BOX_REPO_URL / CODER_BOX_REPO_REF
-# (e.g. to install a fork/branch instead of the public main).
+# git repo on the installed system. We DON'T re-download — the full repo is
+# already baked into the image — so when REPO_DIR is read-only or not a git
+# repo we copy the baked tree into a writable tmpdir (tmpfs/RAM on a live ISO),
+# turn it into a git repo locally (no network), and re-exec from there. After
+# install.sh copies it to /mnt, the installed /etc/nixos-repo is a real git repo
+# with `origin` set, so `git pull` fetches future updates. Override the upstream
+# with CODER_BOX_REPO_URL (used only as the `origin` URL; no fetch here).
 REPO_URL="${CODER_BOX_REPO_URL:-https://github.com/coder/box}"
 REPO_REF="${CODER_BOX_REPO_REF:-main}"
 repo_writable=false
@@ -54,16 +55,26 @@ if [[ -e "$REPO_DIR/.git" ]] && ( : > "$REPO_DIR/.coder-box-write-test" ) 2>/dev
 fi
 rm -f "$REPO_DIR/.coder-box-write-test" 2>/dev/null || true
 if ! $repo_writable; then
-  command -v git >/dev/null || { echo "git missing; cannot clone $REPO_URL" >&2; exit 1; }
+  command -v git >/dev/null || { echo "git missing" >&2; exit 1; }
   workdir="$(mktemp -d "${TMPDIR:-/tmp}/coder-box-install.XXXXXX")"
   echo "=== Repo at $REPO_DIR is read-only / not a git repo ===" >&2
-  echo "=== Cloning $REPO_URL ($REPO_REF) into $workdir for a writable git repo ===" >&2
-  if ! git clone --branch "$REPO_REF" "$REPO_URL" "$workdir/box"; then
-    echo "ERROR: failed to clone $REPO_URL ($REPO_REF)." >&2
-    echo "  The installer ISO needs network access to fetch the repo. Override the" >&2
-    echo "  source with CODER_BOX_REPO_URL / CODER_BOX_REPO_REF if needed." >&2
-    exit 1
-  fi
+  echo "=== Using the baked repo (no download); preparing a writable git repo at $workdir/box ===" >&2
+  cp -a "$REPO_DIR/." "$workdir/box/"
+  chmod -R u+w "$workdir/box"
+  rm -f "$workdir/box/.coder-box-write-test"
+  baked_rev="$(cat /etc/coder-box-rev 2>/dev/null || echo unknown)"
+  git -C "$workdir/box" init -q -b main
+  git -C "$workdir/box" add -A
+  git -C "$workdir/box" \
+    -c user.name="Coder Box installer" \
+    -c user.email="installer@coder.box" \
+    commit -q -m "Coder Box baked image snapshot (upstream rev: ${baked_rev})"
+  # Set origin so the installed box can `git pull` future updates. (No fetch
+  # now — offline. The first pull may need to reconcile this baked snapshot
+  # with upstream history; see README "Updating an installed box".)
+  git -C "$workdir/box" remote add origin "$REPO_URL"
+  git -C "$workdir/box" config "branch.main.remote" origin
+  git -C "$workdir/box" config "branch.main.merge" "refs/heads/${REPO_REF}"
   exec "$workdir/box/install.sh" "$@"
 fi
 

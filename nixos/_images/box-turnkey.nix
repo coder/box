@@ -61,6 +61,13 @@
   # behave like an installed system, without shipping a channel.
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
 
+  # Record which upstream revision this image was built from. The baked repo
+  # under /etc/nixos-repo has no .git (flake source strips it), so install.sh
+  # reads this to label the initial commit of the git repo it materializes on
+  # the installed system. "dirty"/"unknown" when built from an uncommitted tree.
+  environment.etc."coder-box-rev".text =
+    (self.rev or self.dirtyRev or "unknown") + "\n";
+
   # ── Login + Coder admin bootstrap ────────────────────────────────────────────
   # Autologin drops straight into the Plasma desktop, mirroring a
   # freshly-installed, configured box.
