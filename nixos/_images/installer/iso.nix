@@ -52,4 +52,17 @@
     X-GNOME-Autostart-enabled=true
     OnlyShowIn=KDE;
   '';
+
+  # ── Never prompt for a password to get in ────────────────────────────────────
+  # Login itself is already passwordless: box-turnkey.nix autologins the
+  # `coderbox` user, and configuration.nix sets passwordless sudo. The only
+  # remaining password gate is KDE's screen locker (idle auto-lock or
+  # lock-on-resume), which would force a password to get back into the session.
+  # Disable it system-wide for the installer so the box is never locked. (The
+  # appliance keeps the default locker.)
+  environment.etc."xdg/kscreenlockerrc".text = ''
+    [Daemon]
+    Autolock=false
+    LockOnResume=false
+  '';
 }
