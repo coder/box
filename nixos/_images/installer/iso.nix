@@ -30,6 +30,26 @@
   # format; leading space is required.
   isoImage.appendToMenuLabel = " - Coder Box Installer";
   # ISO file name, with arch suffix (e.g. coder-box-installer-x86_64-linux.iso).
-  # See _appliance/iso.nix for why this is mkForce + arch-suffixed.
+  # See ../appliance/iso.nix for why this is mkForce + arch-suffixed.
   image.baseName             = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";
+
+  # ── Auto-launch a full-screen Konsole on login ───────────────────────────────
+  # box-turnkey.nix autologins straight into the Plasma (X11) desktop. For the
+  # installer we want a terminal front-and-centre, so drop a system-wide XDG
+  # autostart entry that opens Konsole full-screen as soon as the session starts,
+  # with its working directory set to /etc/nixos-repo (the baked coder/box repo)
+  # so the install commands are right there. This is the GUI-on stepping stone
+  # toward the eventual terminal-driven install flow. (--fullscreen and
+  # --workdir are Konsole CLI flags.)
+  environment.systemPackages = [ pkgs.kdePackages.konsole ];
+  environment.etc."xdg/autostart/coder-box-installer-konsole.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Coder Box Installer Console
+    Comment=Open a full-screen terminal for installing coder/box
+    Exec=${pkgs.kdePackages.konsole}/bin/konsole --fullscreen --workdir /etc/nixos-repo
+    Terminal=false
+    X-GNOME-Autostart-enabled=true
+    OnlyShowIn=KDE;
+  '';
 }
