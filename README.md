@@ -32,8 +32,8 @@ configuration.nix          # shared NixOS config (all machines)
 Makefile                   # appliance build targets: appliance/{iso,qcow2,raw}[/<arch>]
 local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
 .gitignore                 # ignores hosts/*/local.nix
+install.sh                 # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
 nixos/
-  install.sh               # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
   disko-standard.nix       # shared disko config: 1 GB EFI + 16 GB swap + ext4 root on a single disk
   tailscale.nix            # Tailscale module (auth key, no --ssh flag)
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
@@ -90,7 +90,7 @@ From a NixOS live USB on the target box, with network access (any reasonably rec
 ```sh
 nix-shell -p git --run "git clone https://github.com/coder/box /tmp/box"
 cd /tmp/box
-sudo ./nixos/install.sh
+sudo ./install.sh
 ```
 
 The installer prompts for a target disk. Anything else not passed as a flag falls back to a default: hostname `coder-nixos`, Coder admin `admin@coder.com` / `PleaseChangeMe1234`, OS login `coderbox` / `PleaseChangeMe1234`. Passwords in the summary are obfuscated, unless they are left as defaults.
@@ -98,7 +98,7 @@ The installer prompts for a target disk. Anything else not passed as a flag fall
 For a fully unattended install, pass every value as a flag:
 
 ```sh
-sudo ./nixos/install.sh \
+sudo ./install.sh \
   --hostname coder-demo \
   --disk /dev/nvme0n1 \
   --coder-admin-email you@example.com \
@@ -108,7 +108,7 @@ sudo ./nixos/install.sh \
   --yes
 ```
 
-`./nixos/install.sh --help` lists everything. `--coder-admin-password-file PATH` and `--nixos-password-file PATH` read passwords from a file so they don't end up in shell history. `--no-reboot` skips the automatic reboot at the end.
+`./install.sh --help` lists everything. `--coder-admin-password-file PATH` and `--nixos-password-file PATH` read passwords from a file so they don't end up in shell history. `--no-reboot` skips the automatic reboot at the end.
 
 The installer generates `hosts/<hostname>/{default.nix,local.nix,facter.json}`, copies the repo into `/etc/nixos-repo` on the target, and symlinks `/etc/nixos/flake.nix`. After reboot, `nixos-rebuild switch` Just Works. Continue with [After install](#after-install).
 
@@ -201,7 +201,7 @@ ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
   ```
 
 Both image hosts are completely separate from the disk-install flow above
-(`nixos/install.sh`, `nixos-facter`); adding them changes nothing for normal
+(`install.sh`, `nixos-facter`); adding them changes nothing for normal
 installs. The `_appliance-disk` host shares only the disk *layout*
 (`disko-standard.nix`) with real installs, never the install process itself.
 

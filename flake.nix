@@ -7,7 +7,7 @@
 
     # Declarative disk partitioning. The repo ships a single-disk UEFI
     # layout under nixos/disko-standard.nix that hosts can import.
-    # nixos/install.sh runs `disko --mode disko` then `nixos-install`,
+    # install.sh runs `disko --mode disko` then `nixos-install`,
     # which builds the closure directly into /mnt/nix/store on the target
     # (avoids the tmpfs OOM that the `disko-install` one-shot hits on
     # small-RAM live USB sessions, see disko issue #942).
@@ -28,7 +28,7 @@
       lib = nixpkgs.lib;
 
       # Architectures we expose install tooling (nixos-facter, disko) for.
-      # nixos/install.sh invokes `nix run .#nixos-facter` / `.#disko`, which
+      # install.sh invokes `nix run .#nixos-facter` / `.#disko`, which
       # resolve to the LIVE USB's own architecture. If that arch is missing
       # here the install aborts with e.g. "flake ... does not provide
       # attribute packages.aarch64-linux.nixos-facter". Keep both arm64 and
@@ -76,7 +76,7 @@
       nixosConfigurations =
         lib.genAttrs hostNames (hostname: mkHost hostname);
 
-      # Re-exported so nixos/install.sh can invoke them via the flake's
+      # Re-exported so install.sh can invoke them via the flake's
       # pinned nixpkgs (one nixpkgs fetch on the live USB, used by every
       # nix command in the install). Avoids the tmpfs OOM that comes from
       # `nix run nixpkgs#...` fetching the channel's nixpkgs in parallel.

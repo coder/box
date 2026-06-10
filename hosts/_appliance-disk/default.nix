@@ -5,7 +5,7 @@
 # Unlike the appliance ISO (hosts/_appliance_iso), this builds a *persistent* disk
 # image (qcow2 or raw) using disko's image builder: it carries the real on-disk
 # GPT layout (1 GB ESP + ext4 root from nixos/disko-standard.nix) and state
-# survives reboots, exactly like a machine you ran nixos/install.sh on.
+# survives reboots, exactly like a machine you ran install.sh on.
 #
 # Build (the format is chosen at build time, see Makefile / README):
 #
@@ -17,7 +17,7 @@
 #   nix build .#nixosConfigurations._appliance-disk.config.system.build.diskoImages
 #   # (override disko.imageBuilder.imageFormat = "qcow2" for qcow2)
 #
-# This host is independent of nixos/install.sh; it shares the disk LAYOUT with
+# This host is independent of install.sh; it shares the disk LAYOUT with
 # real installs (disko-standard.nix) but is never itself part of the install
 # flow. The turn-key login + Coder admin bootstrap (shared with the appliance ISO)
 # live in nixos/_appliance/box-turnkey.nix.

@@ -5,7 +5,7 @@
 #   - nixos/_appliance/live-iso.nix   (ephemeral appliance ISO: hosts/_appliance_iso)
 #   - hosts/_appliance-disk/          (persistent disk image: qcow2 / raw)
 #
-# On real installs these settings come from nixos/install.sh + the gitignored
+# On real installs these settings come from install.sh + the gitignored
 # hosts/<host>/local.nix it generates. The image flavours have no install step,
 # so this module supplies the same turn-key defaults (same values the installer
 # defaults to). Change them before handing an image to anyone untrusted, or

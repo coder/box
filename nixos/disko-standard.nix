@@ -14,7 +14,7 @@
 #   imports = [ ../../nixos/disko-standard.nix ];
 #   disko.devices.disk.main.device = "/dev/sda";   # SATA example
 #
-# nixos/install.sh handles the format + install on a fresh box by running
+# install.sh handles the format + install on a fresh box by running
 # `disko --mode disko` followed by `nixos-install`, so the per-host module
 # only needs the device override above.
 
@@ -24,7 +24,7 @@
   disko.devices.disk.main = {
     type = "disk";
     # Override per-host. /dev/nvme0n1 is the default since the current
-    # demo box is NVMe; SATA hosts override to /dev/sda etc. nixos/install.sh
+    # demo box is NVMe; SATA hosts override to /dev/sda etc. install.sh
     # writes the override into hosts/<host>/default.nix based on the disk
     # picked at install time.
     device = lib.mkDefault "/dev/nvme0n1";

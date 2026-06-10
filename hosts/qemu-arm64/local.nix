@@ -6,7 +6,7 @@
 #   sudo git add --intent-to-add -f hosts/<host-folder>/local.nix
 #   sudo nixos-rebuild switch
 #
-# Generated automatically for new hosts by nixos/install.sh, which splices
+# Generated automatically for new hosts by install.sh, which splices
 # in --coder-admin-email, --coder-admin-password, --nixos-username,
 # --nixos-password, and --lan-ip when given.
 #
