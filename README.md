@@ -41,12 +41,12 @@ nixos/
   screenconnect.nix        # optional ScreenConnect remote access client
   _images/                 # prebuilt-image modules (appliance + installer)
     box-turnkey.nix        # shared turn-key Coder box (login + Coder bootstrap); all image hosts
-    _base/                 # primitives shared by every image
+    base/                  # primitives shared by every image
       hardware.nix         # all-hardware (boot on arbitrary hardware)
       iso.nix              # ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
-    _appliance/
+    appliance/
       iso.nix              # appliance ISO module (hosts/_appliance_iso)
-    _installer/
+    installer/
       iso.nix              # installer ISO module (hosts/_installer-iso)
 pkgs/
   coder.nix                # custom Coder server package
@@ -60,11 +60,11 @@ hosts/
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
   _appliance_iso/          # `_appliance_iso` host: ephemeral appliance ISO (no disk install)
-    default.nix            # imports nixos/_images/_appliance/iso.nix (no disko/facter/hardware-config)
+    default.nix            # imports nixos/_images/appliance/iso.nix (no disko/facter/hardware-config)
   _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
     default.nix            # imports disko-standard.nix + nixos/_images/box-turnkey.nix
   _installer-iso/          # `_installer-iso` host: installer ISO (ISO only; installs box onto hardware)
-    default.nix            # imports nixos/_images/_installer/iso.nix
+    default.nix            # imports nixos/_images/installer/iso.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
   templates/
@@ -175,7 +175,7 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 The appliance root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
 discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
-[`nixos/_images/_appliance/iso.nix`](nixos/_images/_appliance/iso.nix) (which pulls in `_base/iso.nix` + `box-turnkey.nix`) —
+[`nixos/_images/appliance/iso.nix`](nixos/_images/appliance/iso.nix) (which pulls in `base/iso.nix` + `box-turnkey.nix`) —
 **no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
 The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
 ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
@@ -229,8 +229,8 @@ make installer/iso/aarch64-linux   # explicit arch
 ```
 
 `hosts/_installer-iso/default.nix` imports
-[`nixos/_images/_installer/iso.nix`](nixos/_images/_installer/iso.nix), which —
-like the appliance ISO — pulls in `_base/iso.nix` + `box-turnkey.nix`.
+[`nixos/_images/installer/iso.nix`](nixos/_images/installer/iso.nix), which —
+like the appliance ISO — pulls in `base/iso.nix` + `box-turnkey.nix`.
 
 ## After install
 

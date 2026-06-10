@@ -12,7 +12,7 @@
 #   # or: nix build .#nixosConfigurations._installer-iso.config.system.build.isoImage
 #   # → out/installer-iso/iso/coder-box-installer-*.iso  (flash with `dd`, Ventoy, etc.)
 #
-# Composition mirrors the appliance ISO: ../_base/iso.nix (ISO mechanics) +
+# Composition mirrors the appliance ISO: ../base/iso.nix (ISO mechanics) +
 # ../box-turnkey.nix (turn-key Coder box). Unlike the appliance, the installer
 # is built ONLY as an ISO (no qcow2/raw disk images).
 
@@ -20,7 +20,7 @@
 
 {
   imports = [
-    ../_base/iso.nix     # shared ISO mechanics
+    ../base/iso.nix     # shared ISO mechanics
     ../box-turnkey.nix   # shared turn-key Coder box (login + Coder bootstrap)
   ];
 

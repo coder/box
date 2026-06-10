@@ -186,10 +186,10 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
     screenconnect.nix           # ScreenConnect remote access client
     _images/                    # prebuilt-image modules (appliance + installer)
       box-turnkey.nix           # shared turn-key Coder box (login + Coder bootstrap); all image hosts
-      _base/hardware.nix        # all-hardware (boot on arbitrary hardware)
-      _base/iso.nix             # shared ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
-      _appliance/iso.nix        # appliance ISO module (imported by hosts/_appliance_iso)
-      _installer/iso.nix        # installer ISO module (imported by hosts/_installer-iso)
+      base/hardware.nix         # all-hardware (boot on arbitrary hardware)
+      base/iso.nix              # shared ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
+      appliance/iso.nix         # appliance ISO module (imported by hosts/_appliance_iso)
+      installer/iso.nix         # installer ISO module (imported by hosts/_installer-iso)
   pkgs/
     coder.nix                   # Coder server package derivation
     coderd-provider.nix         # terraform-provider-coderd derivation

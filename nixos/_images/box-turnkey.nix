@@ -2,8 +2,8 @@
 # into a fully-configured, ready-to-use Coder box with no install step.
 #
 # Shared by every Coder box image flavour:
-#   - nixos/_images/_appliance/iso.nix   (ephemeral appliance ISO: hosts/_appliance_iso)
-#   - nixos/_images/_installer/iso.nix   (installer ISO: hosts/_installer-iso)
+#   - nixos/_images/appliance/iso.nix   (ephemeral appliance ISO: hosts/_appliance_iso)
+#   - nixos/_images/installer/iso.nix   (installer ISO: hosts/_installer-iso)
 #   - hosts/_appliance-disk/             (persistent disk image: qcow2 / raw)
 #
 # On real installs these settings come from install.sh + the gitignored
@@ -20,10 +20,10 @@
     # virtual machines (single source for the _images tree). Replaces the
     # per-host facter.json / hardware-configuration.nix that installed hosts
     # rely on (image hosts ship neither). The ISO flavours also pull this in
-    # via _base/iso.nix; importing the same module twice is a harmless no-op
+    # via base/iso.nix; importing the same module twice is a harmless no-op
     # (NixOS dedups identical module paths), and the _appliance-disk host —
     # which imports box-turnkey but NOT iso.nix — needs it from here.
-    ./_base/hardware.nix
+    ./base/hardware.nix
   ];
 
   # ── Bake the repo into the image at /etc/nixos-repo ──────────────────────────

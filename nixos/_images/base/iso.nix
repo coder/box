@@ -2,7 +2,7 @@
 # (appliance ISO, installer ISO). This is a _base primitive: it wires up the
 # nixpkgs ISO builder and the boot-loader overrides, but carries NO image
 # identity (volumeID / menu label / file name) — each image module under
-# _images/_appliance or _images/_installer sets those.
+# _images/appliance or _images/installer sets those.
 #
 # Provides `config.system.build.isoImage` and the `isoImage.*` options.
 { config, lib, pkgs, modulesPath, ... }:

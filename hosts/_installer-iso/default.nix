@@ -12,7 +12,7 @@
 # turn-key Coder bootstrap) and differs only in image identity; the eventual
 # minimal, GUI-less installer environment is deferred. Unlike the appliance, the
 # installer ships ONLY as an ISO (no qcow2/raw disk images). All of the
-# installer-ISO wiring lives in nixos/_images/_installer/iso.nix.
+# installer-ISO wiring lives in nixos/_images/installer/iso.nix.
 #
 # This host is independent of nixos/install.sh and never participates in the
 # disk-install flow; adding it changes nothing for disko/nixos-install installs.
@@ -20,7 +20,7 @@
 { lib, ... }:
 
 {
-  imports = [ ../../nixos/_images/_installer/iso.nix ]
+  imports = [ ../../nixos/_images/installer/iso.nix ]
     ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get

@@ -15,7 +15,7 @@
 #   # → out/appliance-iso/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
 #
 # Composition: the ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable,
-# bootloader overrides, all-hardware) live in ../_base/iso.nix; the turn-key
+# bootloader overrides, all-hardware) live in ../base/iso.nix; the turn-key
 # Coder box (baked /etc/nixos-repo, nixpkgs registry, coderbox autologin, Coder
 # admin bootstrap) lives in ../box-turnkey.nix. This module only sets the
 # appliance's image identity.
@@ -24,7 +24,7 @@
 
 {
   imports = [
-    ../_base/iso.nix     # shared ISO mechanics
+    ../base/iso.nix     # shared ISO mechanics
     ../box-turnkey.nix   # shared turn-key Coder box (login + Coder bootstrap)
   ];
 
