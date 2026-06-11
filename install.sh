@@ -428,6 +428,33 @@ mkdir -p /mnt/etc/nixos
 ln -sf /etc/nixos-repo/flake.nix /mnt/etc/nixos/flake.nix
 
 # ── Install ────────────────────────────────────────────────────────────────
+# When we install FROM a Coder box image (installer/appliance ISO), the whole
+# system closure for the target already exists in the live /nix/store — but in
+# the read-only squashfs lower layer of the overlay. nixos-install builds the
+# flake with `nix build --store /mnt --extra-substituters <host-store>`, i.e. it
+# *substitutes* the closure into /mnt from the host store; those squashfs paths
+# lack the signatures/narinfo that substitution needs, so the copy silently
+# yields nothing. /mnt is left empty (no bash, the `system` profile points at
+# the wrong path) and the chroot `activate` fails with "No such file or
+# directory".
+#
+# Fix: if the target's system closure is already present in the live store,
+# copy it into /mnt explicitly with `nix copy --no-check-sigs` (which bypasses
+# the signature/substituter machinery). nixos-install then finds everything
+# already in /mnt and just activates it. On a stock NixOS live ISO the closure
+# is NOT present, so we skip this and let nixos-install build straight into /mnt
+# exactly as before (no extra tmpfs/RAM use — important on small live USBs).
+# We use pure `nix eval` (no build) to get the path so the stock-ISO case isn't
+# forced to realise the closure in the host store first.
+SYSTEM_TOPLEVEL=$(nix --extra-experimental-features 'nix-command flakes' \
+  eval --raw "/mnt/etc/nixos-repo#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel" \
+  2>/dev/null || true)
+if [[ -n "$SYSTEM_TOPLEVEL" && -e "$SYSTEM_TOPLEVEL" ]]; then
+  echo "=== System closure already in the live store; copying it into /mnt ==="
+  nix --extra-experimental-features 'nix-command flakes' \
+    copy --no-check-sigs --to "local?root=/mnt" "$SYSTEM_TOPLEVEL"
+fi
+
 echo "=== Running nixos-install ==="
 echo "    (closure builds into /mnt/nix/store; no tmpfs OOM risk)"
 nixos-install \
