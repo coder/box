@@ -115,4 +115,27 @@ in
   # overcommit heuristics don't spuriously block forks during the install on
   # low-RAM machines.
   boot.kernel.sysctl."vm.overcommit_memory" = "1";
+
+  # ── Don't run the Coder box services in the installer ────────────────────────
+  # The installer's only job is to install coder/box onto a disk; it inherits
+  # the full box config (configuration.nix + box-turnkey) but the running Coder
+  # server, k3s, PostgreSQL, Podman, the bootstrap/redirect/reaper units, and
+  # template-sync are all dead weight here (they'd boot a whole Coder stack we
+  # never use, slow startup, and eat RAM/CPU during the install). Disable them.
+  # The INSTALLED system still gets them — this only affects the live installer.
+  services.coder-nixos.k3s-sysbox.enable = lib.mkForce false;
+  services.postgresql.enable             = lib.mkForce false;
+  virtualisation.podman.enable           = lib.mkForce false;
+
+  systemd.services.coder.enable                  = false;
+  systemd.services.coder-init-admin.enable       = false;
+  systemd.services.coder-redirect.enable         = false;
+  systemd.services.coder-logstream-kube.enable   = false;
+  systemd.services.coder-workspace-reaper.enable = false;
+  systemd.timers.coder-workspace-reaper.enable   = false;
+  systemd.services.coder-sync-ssh-keys.enable    = false;
+
+  # Activation script that pushes templates via terraform on every switch —
+  # pointless in the live installer (no running Coder, empty session token).
+  system.activationScripts.coder-template-sync = lib.mkForce "";
 }
