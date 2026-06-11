@@ -16,9 +16,15 @@
 # ../box-turnkey.nix (turn-key Coder box). Unlike the appliance, the installer
 # is built ONLY as an ISO (no qcow2/raw disk images).
 
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, self, ... }:
 
 let
+  # Revision this image was built from. self.rev is the clean git commit;
+  # dirtyRev (…-dirty) when built from an uncommitted tree; "unknown" otherwise.
+  boxRev = self.rev or self.dirtyRev or "unknown";
+  # Short form for the boot-menu label (full 40-char hashes are unwieldy there).
+  boxRevShort = if boxRev == "unknown" then "unknown" else builtins.substring 0 12 boxRev;
+
   # Launcher run inside the preopened Konsole: cd into the baked repo, run the
   # installer as root (passwordless sudo is configured in configuration.nix),
   # and — whatever happens — drop the user into an interactive bash shell so a
@@ -53,9 +59,14 @@ in
 
   # ── Image identity ───────────────────────────────────────────────────────────
   isoImage.volumeID          = "CODER_BOX_INSTALLER";
-  # Boot-menu label (BIOS/isolinux + EFI/grub). See _appliance/iso.nix for the
-  # format; leading space is required.
-  isoImage.appendToMenuLabel = " - Coder Box Installer";
+  # Boot-menu label (BIOS/isolinux + EFI/grub). See ../appliance/iso.nix for the
+  # format; leading space is required. Include the short build revision so the
+  # boot menu shows exactly which image you're booting.
+  isoImage.appendToMenuLabel = " - Coder Box Installer (${boxRevShort})";
+
+  # Record the full build revision for install.sh to print (the baked repo under
+  # /etc/nixos-repo has no .git, so the script can't derive it from git there).
+  environment.etc."coder-box-rev".text = boxRev + "\n";
   # ISO file name, with arch suffix (e.g. coder-box-installer-x86_64-linux.iso).
   # See ../appliance/iso.nix for why this is mkForce + arch-suffixed.
   image.baseName             = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";

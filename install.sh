@@ -201,7 +201,17 @@ list_disks() {
 }
 
 # ── Gather inputs ──────────────────────────────────────────────────────────
+# Resolve the build/commit revision for display: prefer git (the normal
+# live-USB clone, or a fork checkout), else the baked /etc/coder-box-rev that
+# the box image writes (its /etc/nixos-repo has no .git), else "unknown".
+box_revision() {
+  local rev
+  rev="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" && { echo "$rev"; return; }
+  rev="$(cat /etc/coder-box-rev 2>/dev/null)" && [[ -n "$rev" ]] && { echo "$rev"; return; }
+  echo "unknown"
+}
 echo "=== Coder NixOS installer ==="
+echo "  revision: $(box_revision)"
 echo
 
 # Defaults used when the corresponding flag is omitted.
