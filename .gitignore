@@ -4,12 +4,6 @@ hosts/*/local.nix
 .terraform/
 *.bak
 
-# Build artifacts: tarballs produced by builds/tooling. The committed vendor
-# tarball is force-kept below (gitignore can't untrack an already-tracked file,
-# but the explicit un-ignore keeps intent clear and lets `git add` work).
-*.tar.gz
-!pkgs/sysbox-runc-vendor-*.tar.gz
-
 # Appliance image build outputs (Makefile --out-link target dir + artifacts)
 out/
 *.iso
