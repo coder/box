@@ -4,8 +4,25 @@ hosts/*/local.nix
 .terraform/
 *.bak
 
+# Build artifacts: tarballs produced by builds/tooling. The committed vendor
+# tarball is force-kept below (gitignore can't untrack an already-tracked file,
+# but the explicit un-ignore keeps intent clear and lets `git add` work).
+*.tar.gz
+!pkgs/sysbox-runc-vendor-*.tar.gz
+
 # Appliance image build outputs (Makefile --out-link target dir + artifacts)
 out/
 *.iso
 *.qcow2
 *.raw
+
+# Let users drop their OWN hosts into hosts/ without git noise: ignore the
+# whole hosts/ directory, then un-ignore only the hosts we manage centrally
+# (the ones we ship + write to). A user-added hosts/<their-host>/ stays
+# untracked; our managed hosts remain version-controlled as usual.
+hosts/*
+!hosts/_appliance-disk/
+!hosts/_appliance_iso/
+!hosts/_installer-iso/
+!hosts/coder-thinkcentre/
+!hosts/qemu-arm64/

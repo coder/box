@@ -33,6 +33,14 @@
 NIX   ?= nix
 FLAKE ?= .
 
+# Build revision injected into images (installer boot menu, /etc/coder-box-rev).
+# We build through a path flakeref (getFlake (toString ./.)), which carries no
+# git metadata, so self.rev/dirtyRev are empty — compute the rev here and pass
+# it via the installer's `coderBox.rev` option. Full commit hash, with a -dirty
+# suffix when the working tree has uncommitted changes. Empty if not a git
+# checkout (the module then falls back to self.rev / "unknown").
+GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
+
 # Normalize an arch token to a *-linux triple: $(call norm_arch,aarch64) -> aarch64-linux
 norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 
@@ -59,7 +67,7 @@ define box_build
 	@mkdir -p out
 	$(NIX) build --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
-	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; $(3) } ]; }).config.system.build.$(2)'
+	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2)'
 endef
 
 .PHONY: installer/iso appliance/iso appliance/qcow2 appliance/raw

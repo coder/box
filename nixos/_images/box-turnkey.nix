@@ -26,6 +26,22 @@
     ./base/hardware.nix
   ];
 
+  # Build revision baked into the image (used by the installer's boot-menu label
+  # and /etc/coder-box-rev). Default works for `.#` (git+file) builds where
+  # `self` carries git metadata; the Makefile builds through a *path* flakeref
+  # (getFlake (toString ./.)) which has NO git metadata, so it overrides this
+  # with `coderBox.rev = "<git rev>"` (see Makefile box_build). Defined here (in
+  # the shared module) so it exists for every image host the Makefile builds.
+  # (Because this module declares `options`, all its config must live under the
+  # `config = { … }` block below.)
+  options.coderBox.rev = lib.mkOption {
+    type        = lib.types.str;
+    default     = self.rev or self.dirtyRev or "unknown";
+    description = "Git revision this Coder box image was built from.";
+  };
+
+  config = {
+
   # ── Bake the repo into the image at /etc/nixos-repo ──────────────────────────
   # The on-disk installer copies the working tree to /etc/nixos-repo; the Coder
   # bootstrap units (coder-init-admin.service, the coder-template-sync
@@ -86,4 +102,6 @@
     CODER_ADMIN_USERNAME = "admin";
     CODER_ADMIN_PASSWORD = "PleaseChangeMe1234";
   };
+
+  }; # end config
 }
