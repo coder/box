@@ -28,4 +28,10 @@
   # live system activates.
   boot.loader.systemd-boot.enable      = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
+
+  # dmidecode: read SMBIOS/DMI (board model, BIOS, serial). install.sh's
+  # hardware-description auto-detection uses it, and it's handy for inspecting
+  # the target machine from the live ISO. Ship it in the base layer so every
+  # ISO flavour (installer + appliance) has it.
+  environment.systemPackages = [ pkgs.dmidecode ];
 }
