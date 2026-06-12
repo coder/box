@@ -69,18 +69,24 @@ ASSUME_YES=0
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed 's/^# \?//; s/^set -euo.*//' | sed '/^$/N;/^\n$/D'; }
 
+# Require a value for a value-taking flag. Without this, a flag passed as the
+# last token with no argument (e.g. `--coder-admin-password`) expands `$2` under
+# `set -u` and crashes with "$2: unbound variable" instead of a clear message.
+need_value() {
+  [[ $# -ge 2 ]] || { echo "flag $1 requires a value" >&2; usage >&2; exit 2; }
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --hostname)              HOSTNAME_ARG="$2";              shift 2 ;;
-    --hardware-desc)         HARDWARE_DESC_ARG="$2";         shift 2 ;;
-    --disk)                  DISK_ARG="$2";                  shift 2 ;;
-    --coder-admin-email)           ADMIN_EMAIL_ARG="$2";           shift 2 ;;
-    --coder-admin-password)        ADMIN_PASSWORD_ARG="$2";        shift 2 ;;
-    --coder-admin-password-file)   ADMIN_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --nixos-username)        NIXOS_USERNAME_ARG="$2";        shift 2 ;;
-    --nixos-password)        NIXOS_PASSWORD_ARG="$2";        shift 2 ;;
-    --nixos-password-file)   NIXOS_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --lan-ip)                LAN_IP_ARG="$2";                shift 2 ;;
+    --hostname)              need_value "$@"; HOSTNAME_ARG="$2";              shift 2 ;;
+    --hardware-desc)         need_value "$@"; HARDWARE_DESC_ARG="$2";         shift 2 ;;
+    --disk)                  need_value "$@"; DISK_ARG="$2";                  shift 2 ;;
+    --coder-admin-email)           need_value "$@"; ADMIN_EMAIL_ARG="$2";           shift 2 ;;
+    --coder-admin-password)        need_value "$@"; ADMIN_PASSWORD_ARG="$2";        shift 2 ;;
+    --coder-admin-password-file)   need_value "$@"; ADMIN_PASSWORD_FILE_ARG="$2";   shift 2 ;;
+    --nixos-username)        need_value "$@"; NIXOS_USERNAME_ARG="$2";        shift 2 ;;
+    --nixos-password)        need_value "$@"; NIXOS_PASSWORD_ARG="$2";        shift 2 ;;
+    --nixos-password-file)   need_value "$@"; NIXOS_PASSWORD_FILE_ARG="$2";   shift 2 ;;
+    --lan-ip)                need_value "$@"; LAN_IP_ARG="$2";                shift 2 ;;
     --no-reboot)             NO_REBOOT=1;                    shift ;;
     --yes|-y)                ASSUME_YES=1;                   shift ;;
     --help|-h)               usage; exit 0 ;;
