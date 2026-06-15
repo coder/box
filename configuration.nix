@@ -105,6 +105,27 @@ in
     # compressed in-RAM swap device instead, sized to half of RAM.
     zramSwap.enable = lib.mkDefault true;
 
+    # ── Never suspend ───────────────────────────────────────────────
+    # The box is an always-on appliance (Coder server + k3s) reached over the
+    # LAN/tunnel; it must never go to sleep. A suspend drops the NIC, so the
+    # machine silently falls off the network (no mDNS, no SSH, tunnel dies)
+    # until someone physically wakes it. The shipped image runs a KDE desktop,
+    # which exposes a "Sleep" action and reacts to the power key, and a stray
+    # `systemctl suspend` / Suspend() D-Bus call would do the same. Mask all
+    # sleep targets so every one of those paths becomes a no-op, and tell
+    # logind to ignore idle. This is hardening, not a fix for a specific
+    # trigger — an appliance simply should not be suspendable.
+    systemd.targets.sleep.enable       = false;
+    systemd.targets.suspend.enable     = false;
+    systemd.targets.hibernate.enable   = false;
+    systemd.targets.hybrid-sleep.enable = false;
+    services.logind.settings.Login = {
+      HandlePowerKey  = "ignore";
+      HandleSuspendKey = "ignore";
+      HandleLidSwitch = "ignore";
+      IdleAction      = "ignore";
+    };
+
     # ── Networking ────────────────────────────────────────────────────────────
     # Central default hostname. Install hosts override this: flake.nix's mkHost
     # injects `networking.hostName = lib.mkDefault <folder-name>` for every
