@@ -41,8 +41,9 @@
       # hostname, so `nixos-rebuild switch --flake .` auto-selects the right
       # config on the running box without needing `.#<attr>`. Adding a new host
       # means just creating ./hosts/<hostname>/default.nix; no flake.nix edit.
-      # (Underscore-prefixed folders like _appliance_iso are image builds that
-      # skip the folder-name hostname; see mkHost below.)
+      # (Underscore-prefixed folders like _appliance_iso, _appliance-disk, and
+      # _installer-iso are image builds that skip the folder-name hostname; see
+      # mkHost below.)
       hostNames = lib.attrNames (lib.filterAttrs
         (name: type:
           type == "directory"

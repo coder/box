@@ -1,4 +1,4 @@
-# Coder box — appliance image build targets.
+# Coder box — image build targets.
 #
 # An "appliance" is the box prebuilt as a bootable image (no install.sh):
 # it boots straight into the fully-configured Coder box. Three formats:
@@ -7,12 +7,19 @@
 #   make appliance/qcow2      # disk image (persistent; boots in QEMU/libvirt)
 #   make appliance/raw        # disk image (persistent; dd-able to a drive)
 #
-# Each format also takes an architecture suffix; short names are normalized to
+# The "installer" is the box as an ISO that will install coder/box onto real
+# hardware. For now it boots the same full GUI box as the appliance ISO; ISO only
+# (no disk images):
+#
+#   make installer/iso
+#
+# Each target also takes an architecture suffix; short names are normalized to
 # a *-linux triple (e.g. aarch64 -> aarch64-linux):
 #
 #   make appliance/iso/x86_64-linux
 #   make appliance/qcow2/aarch64-linux
 #   make appliance/raw/aarch64
+#   make installer/iso/aarch64-linux
 #
 # Requires Nix with flakes enabled (nix-command + flakes). All builds run on
 # Linux only; cross-arch builds need a matching builder (native remote builder
@@ -25,6 +32,14 @@
 
 NIX   ?= nix
 FLAKE ?= .
+
+# Build revision injected into images (installer boot menu, /etc/coder-box-rev).
+# We build through a path flakeref (getFlake (toString ./.)), which carries no
+# git metadata, so self.rev/dirtyRev are empty — compute the rev here and pass
+# it via the installer's `coderBox.rev` option. Full commit hash, with a -dirty
+# suffix when the working tree has uncommitted changes. Empty if not a git
+# checkout (the module then falls back to self.rev / "unknown").
+GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
 
 # Normalize an arch token to a *-linux triple: $(call norm_arch,aarch64) -> aarch64-linux
 norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
@@ -52,10 +67,18 @@ define box_build
 	@mkdir -p out
 	$(NIX) build --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
-	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; $(3) } ]; }).config.system.build.$(2)'
+	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2)'
 endef
 
-.PHONY: appliance/iso appliance/qcow2 appliance/raw
+.PHONY: installer/iso appliance/iso appliance/qcow2 appliance/raw
+
+# installer/iso is listed first so it's the default goal (bare `make`).
+
+# ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
+installer/iso:
+	$(call box_build,_installer-iso,isoImage,,)
+installer/iso/%:
+	$(call box_build,_installer-iso,isoImage,,$*)
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:

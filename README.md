@@ -29,7 +29,7 @@ NixOS configuration for Coder demo and workshop boxes.
 flake.nix                  # entry point: nixosConfigurations.<host> per machine
 flake.lock                 # pinned nixpkgs / disko / nixos-facter-modules
 configuration.nix          # shared NixOS config (all machines)
-Makefile                   # appliance build targets: appliance/{iso,qcow2,raw}[/<arch>]
+Makefile                   # image build targets: appliance/{iso,qcow2,raw}, installer/iso [/<arch>]
 local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
 .gitignore                 # ignores hosts/*/local.nix
 install.sh                 # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
@@ -39,9 +39,15 @@ nixos/
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
   k3s-podman.nix           # k3s + rootless Podman socket
   screenconnect.nix        # optional ScreenConnect remote access client
-  _appliance/              # prebuilt-appliance modules (ISO + persistent disk)
-    box-turnkey.nix        # shared turn-key bits for appliances (login + Coder bootstrap)
-    live-iso.nix           # ephemeral appliance ISO module (hosts/_appliance_iso)
+  _images/                 # prebuilt-image modules (appliance + installer)
+    box-turnkey.nix        # shared turn-key Coder box (login + Coder bootstrap); all image hosts
+    base/                  # primitives shared by every image
+      hardware.nix         # all-hardware (boot on arbitrary hardware)
+      iso.nix              # ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
+    appliance/
+      iso.nix              # appliance ISO module (hosts/_appliance_iso)
+    installer/
+      iso.nix              # installer ISO module (hosts/_installer-iso)
 pkgs/
   coder.nix                # custom Coder server package
   coderd-provider.nix      # terraform-provider-coderd package
@@ -54,9 +60,11 @@ hosts/
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
   _appliance_iso/          # `_appliance_iso` host: ephemeral appliance ISO (no disk install)
-    default.nix            # imports nixos/_appliance/live-iso.nix (no disko/facter/hardware-config)
+    default.nix            # imports nixos/_images/appliance/iso.nix (no disko/facter/hardware-config)
   _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
-    default.nix            # imports disko-standard.nix + nixos/_appliance/box-turnkey.nix
+    default.nix            # imports disko-standard.nix + nixos/_images/box-turnkey.nix
+  _installer-iso/          # `_installer-iso` host: installer ISO (ISO only; installs box onto hardware)
+    default.nix            # imports nixos/_images/installer/iso.nix
 coderd/
   main.tf                  # manages all Coder templates via coderd Terraform provider
   templates/
@@ -74,7 +82,7 @@ right config on the running box. Adding a new host means creating a host
 folder, no flake.nix edit. The installer does this for you.
 
 Hosts whose folder name starts with an underscore (`_appliance_iso`,
-`_appliance-disk`) are image/appliance builds, not per-machine installs: they
+`_appliance-disk`, `_installer-iso`) are image builds, not per-machine installs: they
 do **not** get the folder-name hostname and instead inherit the central
 default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 
@@ -155,8 +163,8 @@ image at `out/appliance-raw/coder-box-appliance-*.raw` (or
 `out/appliance-qcow2/coder-box-appliance-*.qcow2`). All names carry the arch,
 e.g. `coder-box-appliance-aarch64-linux.iso`.
 
-The turn-key login + Coder admin bootstrap shared by both flavours live in
-[`nixos/_appliance/box-turnkey.nix`](nixos/_appliance/box-turnkey.nix): autologin to the `coderbox`
+The turn-key login + Coder admin bootstrap shared by all image flavours live in
+[`nixos/_images/box-turnkey.nix`](nixos/_images/box-turnkey.nix): autologin to the `coderbox`
 desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 `http://<hostname>.local:3000` (or the `*.try.coder.app` tunnel URL in
 `/etc/motd`). Change these before sharing an image by dropping a gitignored
@@ -167,7 +175,7 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 The appliance root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
 discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
-[`nixos/_appliance/live-iso.nix`](nixos/_appliance/live-iso.nix) (which pulls in `box-turnkey.nix`) —
+[`nixos/_images/appliance/iso.nix`](nixos/_images/appliance/iso.nix) (which pulls in `base/iso.nix` + `box-turnkey.nix`) —
 **no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
 The installed-machine `systemd-boot` / EFI-variable settings are forced off; the
 ISO carries its own GRUB-EFI + isolinux loader (BIOS boot is x86-only, so the
@@ -200,10 +208,29 @@ ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
   sudo dd if=result/*.img of=/dev/sdX bs=4M status=progress oflag=sync
   ```
 
-Both image hosts are completely separate from the disk-install flow above
+All image hosts are completely separate from the disk-install flow above
 (`install.sh`, `nixos-facter`); adding them changes nothing for normal
 installs. The `_appliance-disk` host shares only the disk *layout*
 (`disko-standard.nix`) with real installs, never the install process itself.
+
+### Installer ISO (`_installer-iso`)
+
+The installer is the box as an ISO whose eventual job is to install `coder/box`
+onto real hardware. **For now it is identical to the appliance ISO** (full GUI
+box + turn-key Coder bootstrap), differing only in image identity (volume ID
+`CODER_BOX_INSTALLER`, boot-menu label, and file name
+`coder-box-installer-<arch>.iso`); the minimal/installer-only environment is a
+future change. It builds **only as an ISO** (no qcow2/raw):
+
+```sh
+make installer/iso                 # native arch
+make installer/iso/aarch64-linux   # explicit arch
+# → out/installer-iso/iso/coder-box-installer-*.iso
+```
+
+`hosts/_installer-iso/default.nix` imports
+[`nixos/_images/installer/iso.nix`](nixos/_images/installer/iso.nix), which —
+like the appliance ISO — pulls in `base/iso.nix` + `box-turnkey.nix`.
 
 ## After install
 

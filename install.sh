@@ -31,6 +31,28 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── Writable working copy ──────────────────────────────────────────────────
+# install.sh writes generated host files into the repo (hosts/<host>/...), so
+# REPO_DIR must be writable. On the normal live-USB flow it's a writable git
+# clone. On the installer/appliance ISO the repo is baked at /etc/nixos-repo, a
+# symlink into the read-only Nix store, so writing fails ("Read-only file
+# system"). When REPO_DIR isn't writable, copy it to a writable tmpdir
+# (tmpfs/RAM on a live ISO) and re-exec from there. The copy is a verbatim
+# `cp -a`, so if the baked repo carries a .git the copy keeps it (with its
+# origin) and the installed /etc/nixos-repo can still `git pull`.
+if [[ ! -w "$REPO_DIR" ]]; then
+  workdir="$(mktemp -d "${TMPDIR:-/tmp}/coder-box-install.XXXXXX")"
+  echo "=== Repo at $REPO_DIR is read-only; copying to a writable dir at $workdir/box ===" >&2
+  cp -a "$REPO_DIR/." "$workdir/box/"
+  chmod -R u+w "$workdir/box"
+  # Signal to the re-exec that we're installing FROM a baked Coder box image
+  # (read-only repo in the Nix store) rather than a plain live-USB clone. The
+  # install step uses this to copy the prebuilt closure into /mnt explicitly
+  # (see "Install" below).
+  export CODER_BOX_FROM_IMAGE=1
+  exec "$workdir/box/install.sh" "$@"
+fi
+
 # ── Flag parsing ───────────────────────────────────────────────────────────
 HOSTNAME_ARG=""
 HARDWARE_DESC_ARG=""
@@ -47,18 +69,24 @@ ASSUME_YES=0
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed 's/^# \?//; s/^set -euo.*//' | sed '/^$/N;/^\n$/D'; }
 
+# Require a value for a value-taking flag. Without this, a flag passed as the
+# last token with no argument (e.g. `--coder-admin-password`) expands `$2` under
+# `set -u` and crashes with "$2: unbound variable" instead of a clear message.
+need_value() {
+  [[ $# -ge 2 ]] || { echo "flag $1 requires a value" >&2; usage >&2; exit 2; }
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --hostname)              HOSTNAME_ARG="$2";              shift 2 ;;
-    --hardware-desc)         HARDWARE_DESC_ARG="$2";         shift 2 ;;
-    --disk)                  DISK_ARG="$2";                  shift 2 ;;
-    --coder-admin-email)           ADMIN_EMAIL_ARG="$2";           shift 2 ;;
-    --coder-admin-password)        ADMIN_PASSWORD_ARG="$2";        shift 2 ;;
-    --coder-admin-password-file)   ADMIN_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --nixos-username)        NIXOS_USERNAME_ARG="$2";        shift 2 ;;
-    --nixos-password)        NIXOS_PASSWORD_ARG="$2";        shift 2 ;;
-    --nixos-password-file)   NIXOS_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --lan-ip)                LAN_IP_ARG="$2";                shift 2 ;;
+    --hostname)              need_value "$@"; HOSTNAME_ARG="$2";              shift 2 ;;
+    --hardware-desc)         need_value "$@"; HARDWARE_DESC_ARG="$2";         shift 2 ;;
+    --disk)                  need_value "$@"; DISK_ARG="$2";                  shift 2 ;;
+    --coder-admin-email)           need_value "$@"; ADMIN_EMAIL_ARG="$2";           shift 2 ;;
+    --coder-admin-password)        need_value "$@"; ADMIN_PASSWORD_ARG="$2";        shift 2 ;;
+    --coder-admin-password-file)   need_value "$@"; ADMIN_PASSWORD_FILE_ARG="$2";   shift 2 ;;
+    --nixos-username)        need_value "$@"; NIXOS_USERNAME_ARG="$2";        shift 2 ;;
+    --nixos-password)        need_value "$@"; NIXOS_PASSWORD_ARG="$2";        shift 2 ;;
+    --nixos-password-file)   need_value "$@"; NIXOS_PASSWORD_FILE_ARG="$2";   shift 2 ;;
+    --lan-ip)                need_value "$@"; LAN_IP_ARG="$2";                shift 2 ;;
     --no-reboot)             NO_REBOOT=1;                    shift ;;
     --yes|-y)                ASSUME_YES=1;                   shift ;;
     --help|-h)               usage; exit 0 ;;
@@ -171,12 +199,25 @@ sed_replacement_escape() {
 list_disks() {
   # Whole-block-devices, non-removable, non-loop, non-rom. MODEL is last so an
   # empty model (e.g. virtio /dev/vda) can't shift the TYPE/RM columns.
+  # Skip zram (compressed RAM swap, /dev/zramN) — it reports TYPE=disk RM=0 so
+  # it would otherwise show up as an install target, which is never what we want
+  # (installing onto RAM swap). Also skip device-mapper / md / loop just in case.
   lsblk -d -p -n -b -o NAME,SIZE,RM,TYPE,MODEL \
-    | awk '$4=="disk" && $3=="0" { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
+    | awk '$4=="disk" && $3=="0" && $1 !~ /\/(zram|dm-|md|loop)[0-9]+$/ { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
 }
 
 # ── Gather inputs ──────────────────────────────────────────────────────────
+# Resolve the build/commit revision for display: prefer git (the normal
+# live-USB clone, or a fork checkout), else the baked /etc/coder-box-rev that
+# the box image writes (its /etc/nixos-repo has no .git), else "unknown".
+box_revision() {
+  local rev
+  rev="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" && { echo "$rev"; return; }
+  rev="$(cat /etc/coder-box-rev 2>/dev/null)" && [[ -n "$rev" ]] && { echo "$rev"; return; }
+  echo "unknown"
+}
 echo "=== Coder NixOS installer ==="
+echo "  revision: $(box_revision)"
 echo
 
 # Defaults used when the corresponding flag is omitted.
@@ -357,11 +398,16 @@ if [[ ! -f "$HOST_DIR/facter.json" ]]; then
   echo "  wrote hosts/$HOSTNAME_ARG/facter.json"
 fi
 
-# local.nix is gitignored, so force-add as intent-to-add; the others normal.
-git -C "$REPO_DIR" add --intent-to-add -f \
-  "hosts/$HOSTNAME_ARG/default.nix" \
-  "hosts/$HOSTNAME_ARG/facter.json" \
-  "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
+# A git path flake ignores untracked files, so the freshly written host files
+# must be intent-to-added for the flake to see them (local.nix is gitignored, so
+# force-add it). Only meaningful when REPO_DIR is a git repo; the ISO writable
+# copy may have no .git (a non-git path flake already sees every file), so skip.
+if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$REPO_DIR" add --intent-to-add -f \
+    "hosts/$HOSTNAME_ARG/default.nix" \
+    "hosts/$HOSTNAME_ARG/facter.json" \
+    "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
+fi
 
 # ── Validate ───────────────────────────────────────────────────────────────
 echo "  validating flake ..."
@@ -403,13 +449,59 @@ mkdir -p /mnt/etc/nixos
 ln -sf /etc/nixos-repo/flake.nix /mnt/etc/nixos/flake.nix
 
 # ── Install ────────────────────────────────────────────────────────────────
-echo "=== Running nixos-install ==="
-echo "    (closure builds into /mnt/nix/store; no tmpfs OOM risk)"
-nixos-install \
-  --flake "/mnt/etc/nixos-repo#${HOSTNAME_ARG}" \
-  --no-channel-copy \
-  --no-root-passwd \
-  --option download-buffer-size 268435456
+# Two cases:
+#
+# (A) Installing FROM a Coder box image (installer/appliance ISO;
+#     CODER_BOX_FROM_IMAGE=1). The live /nix/store already contains almost the
+#     entire closure for the target system — but in the read-only squashfs lower
+#     layer of the overlay. nixos-install builds the flake with
+#     `nix build --store /mnt --extra-substituters <host-store>`, i.e. it
+#     *substitutes* paths into /mnt from the host store; squashfs paths lack the
+#     signatures/narinfo substitution needs, so the copy silently yields
+#     nothing. /mnt is left empty (no bash; the `system` profile points at the
+#     wrong path) and the chroot `activate` fails: "No such file or directory".
+#     (NOTE: the target host is `coder-nixos`, a *different* system than the
+#     image's own host, so its toplevel isn't pre-realised — it must be built.
+#     The build is cheap: every heavy dependency (KDE, Coder, k3s, …) is reused
+#     from the squashfs; only the few host-specific derivations are new.)
+#
+#     So: build the toplevel, copy its full closure into /mnt with
+#     `nix copy --no-check-sigs` (bypassing the signature/substituter machinery
+#     that was the actual failure), then `nixos-install --system <path>` just
+#     activates it. This mirrors the working manual workaround ("copy the repo
+#     somewhere writable and run install.sh").
+#
+# (B) Plain live-USB clone (stock NixOS ISO). The closure is NOT present, so
+#     building it in the host store first would balloon tmpfs/RAM. Keep the
+#     original `nixos-install --flake` which builds/downloads straight into
+#     /mnt.
+if [[ "${CODER_BOX_FROM_IMAGE:-0}" == "1" ]]; then
+  echo "=== Building system closure (reusing the baked store) ==="
+  SYSTEM_TOPLEVEL=$(nix --extra-experimental-features 'nix-command flakes' \
+    build --no-link --print-out-paths \
+    --option download-buffer-size 268435456 \
+    "/mnt/etc/nixos-repo#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel")
+  [[ -n "$SYSTEM_TOPLEVEL" ]] || { echo "failed to build system closure" >&2; exit 1; }
+
+  echo "=== Copying system closure into /mnt ==="
+  nix --extra-experimental-features 'nix-command flakes' \
+    copy --no-check-sigs --to "local?root=/mnt" "$SYSTEM_TOPLEVEL"
+
+  echo "=== Running nixos-install (from prebuilt system) ==="
+  nixos-install \
+    --system "$SYSTEM_TOPLEVEL" \
+    --no-channel-copy \
+    --no-root-passwd \
+    --option download-buffer-size 268435456
+else
+  echo "=== Running nixos-install ==="
+  echo "    (closure builds into /mnt/nix/store; no tmpfs OOM risk)"
+  nixos-install \
+    --flake "/mnt/etc/nixos-repo#${HOSTNAME_ARG}" \
+    --no-channel-copy \
+    --no-root-passwd \
+    --option download-buffer-size 268435456
+fi
 
 echo
 echo "✓ Installation complete."

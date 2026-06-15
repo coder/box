@@ -20,14 +20,14 @@
 # This host is independent of install.sh; it shares the disk LAYOUT with
 # real installs (disko-standard.nix) but is never itself part of the install
 # flow. The turn-key login + Coder admin bootstrap (shared with the appliance ISO)
-# live in nixos/_appliance/box-turnkey.nix.
+# live in nixos/_images/box-turnkey.nix.
 
 { lib, pkgs, ... }:
 
 {
   imports = [
-    ../../nixos/disko-standard.nix   # 1 GB ESP + ext4 root single-disk layout
-    ../../nixos/_appliance/box-turnkey.nix   # shared turn-key config (login + Coder bootstrap)
+    ../../nixos/disko-standard.nix       # 1 GB ESP + ext4 root single-disk layout
+    ../../nixos/_images/box-turnkey.nix  # shared turn-key config (login + Coder bootstrap)
   ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get
