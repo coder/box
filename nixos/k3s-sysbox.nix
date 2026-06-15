@@ -348,13 +348,9 @@ in
     environment.variables.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 
     # ── Inject KUBECONFIG into coder.service ─────────────────────────────
-    #
-    # Also order coder.service AFTER coder-k3s-namespace.service so the
-    # coder-workspaces namespace exists before Coder runs its first
-    # template-sync / workspace build. Without this, on a cold boot Coder can
-    # start provisioning before coder-k3s-namespace has run, and the build
-    # fails with `namespaces "coder-workspaces" not found` (the namespace is
-    # created seconds later, leaving the workspace stuck in a failed state).
+    # Inject KUBECONFIG for Terraform's kubernetes provider, and order after
+    # coder-k3s-namespace so the coder-workspaces namespace exists before
+    # Coder's first workspace build (else it fails: namespace not found).
     systemd.services.coder = {
       after    = [ "coder-k3s-namespace.service" ];
       requires = [ "coder-k3s-namespace.service" ];
