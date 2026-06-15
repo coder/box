@@ -64,6 +64,10 @@ sudo git commit -m "feat: describe your change"
 
 Commit regularly. Don't push to remote unless the user explicitly asks.
 
+The `gh` CLI is installed as a helper for working with this repo (opening PRs,
+checking CI, etc.). It is not authenticated out of the box — run `gh auth login`
+once as the login user. Still don't push or open PRs unless explicitly asked.
+
 ## Template Management
 
 Templates live in two places:

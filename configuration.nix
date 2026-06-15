@@ -230,7 +230,7 @@ in
     nixpkgs.config.allowUnfree = true;
 
     environment.systemPackages = with pkgs; [
-      git vim curl wget htop jq pciutils usbutils coder terraform vlc
+      git vim curl wget htop jq pciutils usbutils coder terraform gh vlc
     ];
 
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
