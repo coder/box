@@ -27,11 +27,16 @@ sudo k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml ...
 
 ```sh
 # Service, package, or config changes — safe, non-destructive:
-sudo nixos-rebuild switch
+cd /etc/nixos-repo && sudo nixos-rebuild switch --flake /etc/nixos-repo
 
 # Desktop stack (KDE, SDDM, Xorg, Wayland) — must reboot:
-sudo nixos-rebuild boot && sudo reboot
+cd /etc/nixos-repo && sudo nixos-rebuild boot --flake /etc/nixos-repo && sudo reboot
 ```
+
+The repo is baked onto the box at **`/etc/nixos-repo`** (the canonical flake;
+`nixosConfigurations.<hostname>`, auto-selected by the running hostname). Edit
+files there, then rebuild. Always pass `--flake /etc/nixos-repo` (or `cd` into
+it and use `--flake .`) — see the `/etc/nixos` pitfall below.
 
 `nixos-rebuild switch` triggers the `coder-template-sync` activation script, which runs `terraform apply` in `coderd/` and pushes any template changes to Coder. The `/etc/coder/session-token` it needs is populated automatically by `coder-init-admin.service` on first boot, so this just works post-install.
 
@@ -160,6 +165,8 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 - **Tailscale auth doesn't re-run** — `tailscale-autoauth` has `RemainAfterExit = true`. If you change auth key config, run `sudo systemctl restart tailscale-autoauth`.
 - **Template sync skips**, if `/etc/coder/session-token` is empty, the activation script exits cleanly. The token is auto-populated by `coder-init-admin.service`; if it's missing, check `journalctl -u coder-init-admin`.
 - **`coder` binary path** — the binary is in PATH via NixOS environment; don't hardcode nix store paths in scripts (they change with every package update).
+- **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree: `--flake /etc/nixos-repo` (or `cd /etc/nixos-repo && nixos-rebuild switch --flake .`).
+- **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/facter.json`.
 - **ScreenConnect blank screen** — if SC shows a black/blank view, SDDM may have fallen back to Wayland. Ensure `services.displayManager.sddm.wayland.enable = false` and `services.displayManager.defaultSession = "plasmax11"` in `configuration.nix`, then `nixos-rebuild boot && reboot`.
 
 ## Wildcard App Access (TODO)
