@@ -327,6 +327,9 @@ in
         DOCKER_HOST                    = "unix:///run/user/${toString coderUid}/podman/podman.sock";
         # Enable all experiments: Coder AI agents, MCP, etc.
         CODER_EXPERIMENTS              = "*";
+        # Hide the AI Tasks UI from the dashboard. Experiments above enable the
+        # underlying features (agents, MCP); this just keeps the Tasks tab off.
+        CODER_HIDE_AI_TASKS            = "true";
       };
 
       serviceConfig = {
