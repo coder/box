@@ -342,6 +342,10 @@ mkdir -p "$HOST_DIR"
 # default.nix: disko-standard layout, target disk override, conditional
 # local.nix, facter when present.
 if [[ ! -f "$HOST_DIR/default.nix" ]]; then
+  # ZFS stamps the pool with networking.hostId so it can't be imported on two
+  # machines at once. Generate a unique 8-hex-digit hostId per install so every
+  # box differs (configuration.nix only sets a shared mkDefault for the images).
+  HOSTID=$(head -c4 /dev/urandom | od -A none -t x1 | tr -d ' \n')
   cat > "$HOST_DIR/default.nix" <<NIX
 # Hardware: ${HARDWARE_DESC_ARG}.
 #
@@ -356,6 +360,9 @@ if [[ ! -f "$HOST_DIR/default.nix" ]]; then
 
   # Target disk for disko-standard.
   disko.devices.disk.main.device = lib.mkForce "${DISK_ARG}";
+
+  # Unique ZFS hostId for this machine (required by the ZFS root pool).
+  networking.hostId = "${HOSTID}";
 
   # facter.json overrides hardware-detection bits of hardware-configuration.nix.
   hardware.facter.reportPath =

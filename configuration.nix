@@ -100,6 +100,39 @@ in
     boot.loader.systemd-boot.enable = lib.mkDefault true;
     boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
 
+    # ── Filesystem: ZFS root ───────────────────────────────────────────────────
+    # The standard single-disk layout (nixos/disko-standard.nix) puts root on a
+    # ZFS pool ("rpool"). The kernel needs the ZFS module available at boot to
+    # import it; declare it here so every host that follows the standard layout
+    # (and the prebuilt appliance images) boots. Hosts that predate disko and
+    # still mount an ext4 root (e.g. coder-thinkcentre) are unaffected — ZFS
+    # support being present costs nothing if no ZFS pool exists.
+    boot.supportedFilesystems = [ "zfs" ];
+
+    # ZFS refuses to import a pool unless networking.hostId is set (it stamps
+    # the pool so it can't be imported on two machines at once). This shared
+    # mkDefault lets the prebuilt appliance images build and boot; install.sh
+    # writes a freshly generated, unique hostId into hosts/<host>/default.nix so
+    # every installed box differs. Override per-host if you ever clone an image.
+    networking.hostId = lib.mkDefault "c0de0b09";
+
+    # Keep the pool healthy and SSDs happy: periodic scrub (verifies every
+    # block against its checksum and self-heals where possible) and weekly TRIM.
+    services.zfs.autoScrub.enable = lib.mkDefault true;
+    services.zfs.trim.enable      = lib.mkDefault true;
+
+    # Automatic snapshots of datasets tagged com.sun:auto-snapshot = "true"
+    # (the root dataset in disko-standard.nix). This is the whole point of the
+    # ZFS move: a bad nixos-rebuild or experiment can be rolled back in seconds.
+    services.zfs.autoSnapshot = {
+      enable     = lib.mkDefault true;
+      frequent   = lib.mkDefault 4;   # 15-min snapshots, keep 4
+      hourly     = lib.mkDefault 24;
+      daily      = lib.mkDefault 7;
+      weekly     = lib.mkDefault 4;
+      monthly    = lib.mkDefault 3;
+    };
+
     # ── Swap ──────────────────────────────────────────────────────────────────
     # No on-disk swap partition (see nixos/disko-standard.nix). Use a
     # compressed in-RAM swap device instead, sized to half of RAM.
