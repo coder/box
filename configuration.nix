@@ -105,6 +105,27 @@ in
     # compressed in-RAM swap device instead, sized to half of RAM.
     zramSwap.enable = lib.mkDefault true;
 
+    # ── Never suspend or hibernate ──────────────────────────────────────
+    # The box is an always-on appliance (Coder server + k3s) reached over the
+    # LAN and a *.try.coder.app tunnel. Suspending or hibernating drops the
+    # NIC, so the machine silently falls off the network (no mDNS, no SSH,
+    # tunnel dies) until someone physically wakes it. The shipped image runs a
+    # KDE desktop, which exposes Sleep/Hibernate actions, and a stray
+    # `systemctl suspend` / `systemctl hibernate` (or the matching D-Bus call)
+    # would do the same. Mask the suspend, hibernate, and hybrid-sleep targets
+    # so all of those paths become a no-op.
+    #
+    # Scope is deliberately narrow: only the "drop off the network" sleep
+    # states are blocked. Idle/lid/power-key handling is left at NixOS
+    # defaults — the single concern is the box not putting itself to sleep.
+    systemd.targets.suspend.enable      = false;
+    systemd.targets.hibernate.enable    = false;
+    systemd.targets.hybrid-sleep.enable = false;
+    services.logind.settings.Login = {
+      HandleSuspendKey   = "ignore";
+      HandleHibernateKey = "ignore";
+    };
+
     # ── Networking ────────────────────────────────────────────────────────────
     # Central default hostname. Install hosts override this: flake.nix's mkHost
     # injects `networking.hostName = lib.mkDefault <folder-name>` for every
