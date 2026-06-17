@@ -348,7 +348,12 @@ in
     environment.variables.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 
     # ── Inject KUBECONFIG into coder.service ─────────────────────────────
+    # Inject KUBECONFIG for Terraform's kubernetes provider, and order after
+    # coder-k3s-namespace so the coder-workspaces namespace exists before
+    # Coder's first workspace build (else it fails: namespace not found).
     systemd.services.coder = {
+      after    = [ "coder-k3s-namespace.service" ];
+      requires = [ "coder-k3s-namespace.service" ];
       environment = {
         KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       };
