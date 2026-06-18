@@ -547,6 +547,45 @@ in
     # re-bootstraps the admin user, mints a fresh session token, and runs
     # nixos-rebuild switch to push templates back to Coder — fully automated.
     #
+    # ── Workshop workspace image (Firefox baked in) ──────────────────────────
+    # Builds hosts/coderbox/templates/workshop/Dockerfile (devcontainer base +
+    # firefox-esr) with podman and imports it into k3s containerd as
+    # localhost/workshop:firefox, which the workshop template references
+    # (image_pull_policy=IfNotPresent). Runs at boot; skips the build if the
+    # image is already present so it's cheap on reboots. Idempotent, so it also
+    # restores the image after a coder-reset wipes nothing here (images live in
+    # containerd, not /var/lib/coder) — but kept for fresh installs.
+    systemd.services.coder-workshop-image = {
+      description = "Build + import the workshop workspace image (Firefox)";
+      after       = [ "k3s.service" "podman.socket" ];
+      wantedBy    = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "coder-workshop-image" ''
+          set -uo pipefail
+          TAG=localhost/workshop:firefox
+          DIR=/etc/nixos-repo/hosts/coderbox/templates/workshop
+          # Already in k3s? then nothing to do.
+          if ${pkgs.k3s}/bin/k3s ctr -n k8s.io images ls 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "$TAG"; then
+            echo "[workshop-image] $TAG already present; skipping build."
+            exit 0
+          fi
+          [ -f "$DIR/Dockerfile" ] || { echo "[workshop-image] no Dockerfile at $DIR; skipping."; exit 0; }
+          echo "[workshop-image] building $TAG with podman..."
+          export XDG_RUNTIME_DIR=/run/user/${toString coderUid}
+          ${pkgs.sudo}/bin/sudo -u coder XDG_RUNTIME_DIR=/run/user/${toString coderUid} \
+            ${pkgs.podman}/bin/podman build -t "$TAG" -f "$DIR/Dockerfile" "$DIR" || { echo "[workshop-image] build failed"; exit 0; }
+          TMP=$(${pkgs.coreutils}/bin/mktemp /tmp/workshop-img.XXXXXX.tar)
+          ${pkgs.sudo}/bin/sudo -u coder XDG_RUNTIME_DIR=/run/user/${toString coderUid} \
+            ${pkgs.podman}/bin/podman save --format oci-archive -o "$TMP" "$TAG" || { echo "[workshop-image] save failed"; rm -f "$TMP"; exit 0; }
+          ${pkgs.k3s}/bin/k3s ctr -n k8s.io images import "$TMP" || echo "[workshop-image] import failed"
+          ${pkgs.coreutils}/bin/rm -f "$TMP"
+          echo "[workshop-image] done."
+        '';
+      };
+    };
+
     # Usage:  sudo systemctl start coder-reset
     systemd.services.coder-reset = {
       description = "Coder – full wipe and re-bootstrap (run manually)";
