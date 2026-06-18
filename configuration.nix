@@ -434,8 +434,18 @@ in
 
           # 2. Mint a long-lived session token for coder-template-sync.
           mkdir -p /etc/coder
+          # Re-mint unless the existing token both exists AND actually authenticates
+          # (a stale/invalid token file must not block re-minting, e.g. after a
+          # partially-failed reset).
+          token_ok=0
           if [ -s "$token_file" ]; then
-            echo "Session token already exists."
+            if ${pkgs.curl}/bin/curl -sf -H "Coder-Session-Token: $(cat "$token_file")" \
+                 http://localhost:3000/api/v2/users/me > /dev/null 2>&1; then
+              token_ok=1
+            fi
+          fi
+          if [ "$token_ok" = 1 ]; then
+            echo "Session token already exists and is valid."
           else
             echo "Logging in as admin to mint a long-lived token..."
             SESSION=$(${pkgs.curl}/bin/curl -sf -X POST http://localhost:3000/api/v2/users/login \
@@ -557,9 +567,12 @@ in
           ${pkgs.sudo}/bin/sudo -u postgres ${pkgs.postgresql}/bin/psql \
             -c 'CREATE DATABASE coder OWNER coder;'
 
-          # 4. Wipe Coder data dir (clears sentinel, tokens, provisioner state, Podman volumes)
-          echo "--- wiping /var/lib/coder"
-          ${pkgs.coreutils}/bin/rm -rf /var/lib/coder/*
+          # 4. Wipe Coder data dir (clears sentinel, tokens, provisioner state, Podman volumes).
+          #    Use find, not `rm -rf /var/lib/coder/*` — a glob skips DOTFILES, which
+          #    would leave the .admin-created / .templates-deployed sentinels behind and
+          #    make the re-bootstrap below wrongly skip creating the admin user.
+          echo "--- wiping /var/lib/coder (including dotfiles)"
+          ${pkgs.findutils}/bin/find /var/lib/coder -mindepth 1 -maxdepth 1 -exec ${pkgs.coreutils}/bin/rm -rf {} +
           ${pkgs.coreutils}/bin/chown -R coder:coder /var/lib/coder
 
           # 5. Clear the session token so coder-redirect doesn't use a stale one

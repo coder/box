@@ -29,6 +29,7 @@ log() { echo "[seed-chats] $*"; }
 api() { curl -s -H "Coder-Session-Token: $TOK" "$@"; }
 
 if [ -z "$TOK" ]; then log "no session token; skipping."; exit 0; fi
+
 # Wait for the API to be reachable (server may still be starting).
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "Coder-Session-Token: $TOK" "$B/providers" || true)
@@ -36,31 +37,38 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# 1. Anthropic provider (only if none present).
-have_provider=$(api "$B/providers" | grep -c '"provider": *"anthropic"' || true)
+# 1. Anthropic provider. The API lists all built-in "supported" providers even
+# when none is configured, so only treat it as present when it actually has a
+# key / source==database (a real configured provider) — not a placeholder.
+have_provider=$(api "$B/providers" | jq '[.[] | select(.provider=="anthropic" and (.has_api_key==true or .source=="database"))] | length' 2>/dev/null || echo 0)
 if [ "${have_provider:-0}" -ge 1 ]; then
-  log "anthropic provider already present; skipping provider+models."
+  log "configured anthropic provider already present; skipping provider create."
+elif [ -z "$KEY" ]; then
+  log "no ANTHROPIC_API_KEY; cannot seed provider."
 else
-  if [ -z "$KEY" ]; then
-    log "no ANTHROPIC_API_KEY; cannot seed provider. Skipping."
-  else
-    log "creating anthropic provider"
+  log "creating anthropic provider"
+  api -X POST -H 'content-type: application/json' \
+    -d "$(jq -n --arg k "$KEY" '{provider:"anthropic", display_name:"Anthropic", enabled:true, api_key:$k, central_api_key_enabled:true, allow_user_api_key:false}')" \
+    "$B/providers" >/dev/null
+fi
+
+# 2. Model configs — created independently of the provider (decoupled, so a
+# provider-without-models state still gets fixed). Only seed when none exist.
+have_models=$(api "$B/model-configs" | jq 'length' 2>/dev/null || echo 0)
+if [ "${have_models:-0}" -ge 1 ]; then
+  log "model-configs already present ($have_models); skipping."
+else
+  for spec in \
+    'claude-opus-4-5-20251101|Claude Opus 4.5|false' \
+    'claude-sonnet-4-5-20250929|Claude Sonnet 4.5|false' \
+    'claude-sonnet-4-6|Claude Sonnet 4.6|true'; do
+    model="${spec%%|*}"; rest="${spec#*|}"; disp="${rest%%|*}"; def="${rest##*|}"
+    log "creating model-config $model (default=$def)"
     api -X POST -H 'content-type: application/json' \
-      -d "$(jq -n --arg k "$KEY" '{provider:"anthropic", display_name:"Anthropic", enabled:true, api_key:$k, central_api_key_enabled:true, allow_user_api_key:false}')" \
-      "$B/providers" >/dev/null
-    # 2. Model configs. Last one created stays default via is_default.
-    for spec in \
-      'claude-opus-4-5-20251101|Claude Opus 4.5|false' \
-      'claude-sonnet-4-5-20250929|Claude Sonnet 4.5|false' \
-      'claude-sonnet-4-6|Claude Sonnet 4.6|true'; do
-      IFS='|' read -r model disp def <<< "$spec"
-      log "creating model-config $model (default=$def)"
-      api -X POST -H 'content-type: application/json' \
-        -d "$(jq -n --arg m "$model" --arg d "$disp" --argjson def "$def" \
-              '{provider:"anthropic", model:$m, display_name:$d, enabled:true, is_default:$def, context_limit:200000, compression_threshold:70}')" \
-        "$B/model-configs" >/dev/null
-    done
-  fi
+      -d "$(jq -n --arg m "$model" --arg d "$disp" --argjson def "$def" \
+            '{provider:"anthropic", model:$m, display_name:$d, enabled:true, is_default:$def, context_limit:200000, compression_threshold:70}')" \
+      "$B/model-configs" >/dev/null
+  done
 fi
 
 # 3. Workshop system prompt.
