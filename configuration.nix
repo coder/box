@@ -498,6 +498,20 @@ in
             echo "Templates deployed."
           fi
 
+          # Seed the experimental Agents (chats) DB config: Anthropic provider,
+          # model-configs (sonnet-4-6 default), workshop system prompt, and the
+          # virtual-desktop experiment. Idempotent. (The DB is wiped by
+          # coder-reset; the template-sync activation re-seeds on every rebuild.)
+          if [ -x /etc/nixos-repo/coderd/seed/seed-chats.sh ]; then
+            PATH="${pkgs.curl}/bin:${pkgs.jq}/bin:$PATH" \
+            ANTHROPIC_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+            CODER_SESSION_TOKEN="$(cat "$token_file")" \
+            CODER_URL="http://localhost:3000" \
+            SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+            ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
+              | ${pkgs.gnused}/bin/sed 's/^/[seed-chats] /' || true
+          fi
+
           echo "Bootstrap complete."
         '';
       };
@@ -621,6 +635,19 @@ in
             -var="workshop_admin_token=$(cat "$TOKEN_FILE")" \
             -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /'
+
+          # Re-seed the experimental "Agents" (chats) DB config: Anthropic
+          # provider, model-configs (sonnet-4-6 default), workshop system
+          # prompt, and the virtual-desktop experiment. Idempotent — skips
+          # whatever already exists. The DB is wiped by coder-reset, so this
+          # restores the AI config on every rebuild/reset.
+          PATH="${pkgs.curl}/bin:${pkgs.jq}/bin:$PATH" \
+          ANTHROPIC_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+          CODER_SESSION_TOKEN="$(cat "$TOKEN_FILE")" \
+          CODER_URL="http://localhost:3000" \
+          SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+          ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
+            | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /' || true
         fi
       '';
       deps = [];
