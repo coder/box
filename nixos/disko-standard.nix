@@ -5,9 +5,9 @@
 # configuration.nix: zramSwap.enable). Works on any single block device
 # (NVMe, SATA SSD/HDD, USB, virtio).
 #
-# Why ZFS instead of ext4: cheap, instant snapshots (roll back a bad
-# nixos-rebuild or an experiment in seconds), transparent zstd compression,
-# and on-disk checksums/scrubbing. The pool is imported by name ("rpool"),
+# Why ZFS instead of ext4: cheap, instant on-demand snapshots (take one before
+# a risky nixos-rebuild and roll back in seconds), transparent zstd
+# compression, and on-disk checksums/scrubbing. The pool is imported by name ("rpool"),
 # not by device node, so the layout stays portable across machines that
 # follow it (NVMe/SATA/USB/virtio) — the same property the old ext4 layout
 # got from filesystem labels.
@@ -81,30 +81,21 @@
         # avoids the slow on-disk xattr dir layout.
         acltype = "posixacl";
         xattr = "sa";
-        # Off by default at the pool root; flipped on per-dataset below so
-        # automatic snapshots only cover the data we care to roll back.
-        "com.sun:auto-snapshot" = "false";
         # The pool itself isn't a mountpoint; datasets carry the mounts.
         mountpoint = "none";
       };
       datasets = {
-        # Root filesystem — snapshot this so a bad rebuild/experiment can be
-        # rolled back. services.zfs.autoSnapshot (configuration.nix) takes
-        # periodic snapshots of every dataset with auto-snapshot = "true".
+        # Root filesystem.
         root = {
           type = "zfs_fs";
           mountpoint = "/";
-          options."com.sun:auto-snapshot" = "true";
         };
-        # The Nix store is fully reproducible from the flake, large, and churns
-        # constantly — snapshotting it just wastes space, so leave it off.
+        # The Nix store is fully reproducible from the flake and churns
+        # constantly; atime off avoids needless write amplification.
         nix = {
           type = "zfs_fs";
           mountpoint = "/nix";
-          options = {
-            "com.sun:auto-snapshot" = "false";
-            atime = "off";
-          };
+          options.atime = "off";
         };
       };
     };

@@ -124,18 +124,6 @@ in
     services.zfs.autoScrub.enable = lib.mkDefault true;
     services.zfs.trim.enable      = lib.mkDefault true;
 
-    # Automatic snapshots of datasets tagged com.sun:auto-snapshot = "true"
-    # (the root dataset in disko-standard.nix). This is the whole point of the
-    # ZFS move: a bad nixos-rebuild or experiment can be rolled back in seconds.
-    services.zfs.autoSnapshot = {
-      enable     = lib.mkDefault true;
-      frequent   = lib.mkDefault 4;   # 15-min snapshots, keep 4
-      hourly     = lib.mkDefault 24;
-      daily      = lib.mkDefault 7;
-      weekly     = lib.mkDefault 4;
-      monthly    = lib.mkDefault 3;
-    };
-
     # ── Swap ──────────────────────────────────────────────────────────────────
     # No on-disk swap partition (see nixos/disko-standard.nix). Use a
     # compressed in-RAM swap device instead, sized to half of RAM.
