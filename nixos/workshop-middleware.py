@@ -226,10 +226,47 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/wm/health":
+            return self.handle_health()
+        if not DISABLE_INTERCEPT and path == "/wm/login":
+            return self.handle_test_login()
         if not DISABLE_INTERCEPT and path == MW_CALLBACK_PATH:
             return self.handle_callback()
         # (Step 3 will also intercept the login authorize-start here.)
         return self.proxy()
+
+    # ---- health / readiness ----------------------------------------------------
+    def handle_health(self):
+        body = json.dumps({
+            "ok": True,
+            "intercept": not DISABLE_INTERCEPT,
+            "public_url": PUBLIC_URL,
+            "upstream": UPSTREAM,
+            "client_id_set": bool(GH_CLIENT_ID),
+        }).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    # ---- test harness: kick off a standalone GitHub authorize ------------------
+    # Lets us exercise the REAL OAuth handshake + external-auth injection without
+    # depending on Coder's login flow (e.g. when the middleware runs as a public
+    # coder_app). Visit /wm/login while signed into GitHub -> consent (repo) ->
+    # GitHub 302s to /wm/cb -> handle_callback exchanges + injects.
+    def handle_test_login(self):
+        params = urllib.parse.urlencode({
+            "client_id": GH_CLIENT_ID,
+            "redirect_uri": PUBLIC_URL + MW_CALLBACK_PATH,
+            "scope": GH_SCOPES,
+            "state": "wmtest-" + str(int(time.time())),
+            "allow_signup": "false",
+        })
+        self.send_response(302)
+        self.send_header("Location", GITHUB_AUTHORIZE + "?" + params)
+        self.end_headers()
 
     # ---- transparent proxy to Coder --------------------------------------------
     def proxy(self):
@@ -295,18 +332,38 @@ class Handler(BaseHTTPRequestHandler):
         # 2) resolve the Coder user via GitHub numeric id
         gh_id = github_user_id(access_token)
         user_id = resolve_user_id_by_github_id(gh_id) if gh_id else ""
+        injected = False
         if user_id:
-            ok = upsert_external_auth(user_id, access_token, refresh_token, expiry_epoch)
-            log(f"callback: external-auth {'set' if ok else 'FAILED'} for user {user_id} (gh {gh_id})")
+            injected = upsert_external_auth(user_id, access_token, refresh_token, expiry_epoch)
+            log(f"callback: external-auth {'set' if injected else 'FAILED'} for user {user_id} (gh {gh_id})")
         else:
             # User may not exist yet (first login). Step 3 handles ordering so login
             # creates the user first; for now we just log and continue.
             log(f"callback: no Coder user for gh id {gh_id}; external-auth deferred")
-        # 3) complete Coder login by handing a fresh silent code to Coder's real
-        #    callback. Implemented in Step 3; for now redirect to dashboard.
-        self.send_response(302)
-        self.send_header("Location", PUBLIC_URL + "/")
+
+        # In TEST-HARNESS mode (no login chaining yet) show a result page so the
+        # OAuth+injection flow is verifiable in a browser. Step 3 replaces this
+        # with the silent-login chaining + redirect to the dashboard.
+        scopes = tok.get("scope", "")
+        status = "ok" if injected else ("no-user" if not user_id else "inject-failed")
+        page = (
+            "<!doctype html><meta charset=utf-8>"
+            "<title>workshop-mw</title>"
+            "<body style='font-family:system-ui;max-width:40rem;margin:3rem auto'>"
+            f"<h2>GitHub auth {'succeeded' if injected else 'completed'}</h2>"
+            f"<p>status: <b>{status}</b></p>"
+            f"<p>github user id: {gh_id}</p>"
+            f"<p>resolved coder user: {user_id or '(none)'}</p>"
+            f"<p>token scopes: <code>{scopes}</code></p>"
+            f"<p>external-auth link written: <b>{injected}</b></p>"
+            "</body>"
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(page)))
         self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(page)
 
 
 def main():
