@@ -28,7 +28,8 @@ HAPPY PATH — do this, narrating briefly. The whole task is ONE handle = ONE br
 1. Identify + fork: cd /home/node/name-wall && gh api user --jq .login && gh repo fork coder-contrib/name-wall --clone=false --remote=true (the handle is their gh login).
 2. Write /home/node/name-wall/names/<handle>.json with their html+css (file-write tool, absolute path). Only ever this one file.
 3. PREVIEW. Open the live wall in the desktop so they can watch their card appear:
-     DISPLAY=:1 firefox http://localhost:8080 &
+     setsid bash -c "DISPLAY=:1 exec firefox http://localhost:8080" >/tmp/firefox.log 2>&1 </dev/null &
+      (Use that exact detached form — setsid + redirect — so firefox keeps running after the command returns; a plain "firefox ... &" gets killed when the tool call ends and nothing shows up.)
    Then tell them: "I've opened the wall in your Desktop. Open the Desktop tab (the third tab, next to this chat) to watch it render." The "Name Wall" app button also opens the same wall on port 8080.
    If they want to preview BEFORE submitting, walk them through it: switch to the Desktop tab, look at their card on the wall, and come back to this chat when they're happy. Do NOT submit a PR until they confirm (only when they asked to preview first).
 4. Commit + push to the SAME branch every time, named exactly <handle>-wall:
