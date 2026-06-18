@@ -318,23 +318,7 @@ in
       "d /etc/coder 0750 root coder -"
       "f /etc/coder/session-token 0600 coder coder -"
       "z /etc/coder/session-token 0600 coder coder -"
-    ]
-    # Surface the agent/dev guide in each normal user's home so an agent that
-    # lands in $HOME (or a human on first login) finds it immediately. The repo
-    # itself lives at /etc/nixos-repo; agents.md documents the rebuild workflow.
-    # `L+` recreates the symlink on every boot so it tracks the canonical file.
-    ++ (lib.mapAttrsToList
-         (_: u: "L+ ${u.home}/agents.md - - - - /etc/nixos-repo/agents.md")
-         (lib.filterAttrs (_: u: u.isNormalUser && u.home != null) config.users.users));
-
-    # Whitelist the root-owned baked repo so interactive `git`/`nix` as the
-    # login user (or via sudo) don't trip git's dubious-ownership guard with
-    # "repository path '/etc/nixos-repo' is not owned by current user". The
-    # box's own services already pass `-c safe.directory=...` inline; this is
-    # purely for humans/agents running git by hand. Harmless on appliance ISOs
-    # where /etc/nixos-repo is a read-only store path (not a git repo).
-    programs.git.enable = true;
-    programs.git.config.safe.directory = [ "/etc/nixos-repo" ];
+    ];
 
     # ── Coder server ──────────────────────────────────────────────────────────
     # Base env vars live here. Secrets (admin creds, OAuth, etc.) are merged in
@@ -367,6 +351,10 @@ in
         # Hide the AI Tasks UI from the dashboard. Experiments above enable the
         # underlying features (agents, MCP); this just keeps the Tasks tab off.
         CODER_HIDE_AI_TASKS            = "true";
+        # AI Bridge: centralized LLM gateway so workspace agents (Claude Code)
+        # work without per-user keys. The Anthropic key is set in the host's
+        # local.nix (gitignored). Routes via the claude-code module's gateway.
+        CODER_AIBRIDGE_ENABLED         = "true";
       };
 
       serviceConfig = {
@@ -502,6 +490,8 @@ in
               -var="coder_session_token=$(cat "$token_file")" \
               -var="hostname=${config.networking.hostName}" \
               -var="version_name=$COMMIT" \
+              -var="workshop_anthropic_key=${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+              -var="workshop_admin_token=$(cat "$token_file")" \
               -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[template-deploy] /'
             touch "$templates_sentinel"
@@ -627,6 +617,8 @@ in
             -var="coder_session_token=$(cat "$TOKEN_FILE")" \
             -var="hostname=${config.networking.hostName}" \
             -var="version_name=$COMMIT" \
+            -var="workshop_anthropic_key=${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+            -var="workshop_admin_token=$(cat "$TOKEN_FILE")" \
             -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /'
         fi

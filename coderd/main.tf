@@ -38,6 +38,21 @@ variable "version_name" {
   default = "latest"
 }
 
+# Secrets for the workshop admin Wall-of-Fame display. Sourced from the box's
+# gitignored local.nix via the coder-template-sync activation script. Default
+# empty so other machines / a missing value simply disable the admin stack.
+variable "workshop_anthropic_key" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "workshop_admin_token" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 provider "coderd" {
   url   = var.coder_url
   token = var.coder_session_token
@@ -50,6 +65,7 @@ provider "coderd" {
 
 locals {
   is_thinkcentre = var.hostname == "coder-thinkcentre"
+  is_coderbox    = var.hostname == "coderbox"
 
   # Workspace lifecycle policy (applied to all templates)
   # Autostop: workspace stops 24h after last activity bump.
@@ -63,8 +79,8 @@ locals {
 
 resource "coderd_template" "k3s-podman" {
   name         = "k3s-podman"
-  display_name = "Kubernetes (Podman)"
-  description  = "k3s + rootless Podman, Podman socket bind-mounted as /var/run/docker.sock"
+  display_name = "Container Workspace (Podman)"
+  description  = "Advanced: Docker-compatible workspace via the host rootless Podman socket."
   icon         = "/icon/k8s.png"
 
   default_ttl_ms = local.autostop_ms
@@ -85,8 +101,8 @@ resource "coderd_template" "k3s-podman" {
 
 resource "coderd_template" "k3s-sysbox" {
   name         = "k3s-sysbox"
-  display_name = "Kubernetes (Docker)"
-  description  = "k3s + sysbox-runc, each workspace gets an isolated Docker daemon, no privileged mode needed"
+  display_name = "Isolated Docker Path"
+  description  = "Build and run containers inside your workspace with hardened isolation, no privileged mode, no host access."
   icon         = "/icon/docker.png"
 
   default_ttl_ms = local.autostop_ms
@@ -107,8 +123,8 @@ resource "coderd_template" "k3s-sysbox" {
 
 resource "coderd_template" "k3s-dev" {
   name         = "k3s-dev"
-  display_name = "Dev Environment (Demo)"
-  description  = "Language-specific workspaces with real demo apps, Python, Node.js, Go, Java, Rust"
+  display_name = "Polyglot Demo (advanced)"
+  description  = "Advanced: pick a language (Python/Node/Go/Java/Rust) and get a running sample app."
   icon         = "/icon/code.svg"
 
   default_ttl_ms = local.autostop_ms
@@ -127,10 +143,85 @@ resource "coderd_template" "k3s-dev" {
   }]
 }
 
+resource "coderd_template" "data-science" {
+  count        = local.is_coderbox ? 1 : 0
+  name         = "data-science"
+  display_name = "Data Science Path"
+  description  = "A specialized golden path: Python, JupyterLab, and common data libraries, ready to analyze."
+  icon         = "/icon/jupyter.svg"
+
+  default_ttl_ms = local.autostop_ms
+
+  versions = [{
+    name      = var.version_name
+    directory = "${path.module}/../hosts/coderbox/templates/data-science"
+    active    = true
+    tf_vars   = [{
+      name  = "coder_hostname"
+      value = var.hostname
+    }, {
+      name  = "coder_lan_ip"
+      value = var.coder_lan_ip
+    }]
+  }]
+}
+
+resource "coderd_template" "kindleframe-onboard" {
+  count        = local.is_coderbox ? 1 : 0
+  name         = "kindleframe-onboard"
+  display_name = "Project: kindleframe-server"
+  description  = "Onboard to a real private service: clone via GitHub auth, install, and run, with an AI agent guided by the repo's conventions."
+  icon         = "/emojis/1f5bc.png"
+
+  default_ttl_ms = local.autostop_ms
+
+  versions = [{
+    name      = var.version_name
+    directory = "${path.module}/../hosts/coderbox/templates/kindleframe-onboard"
+    active    = true
+    tf_vars   = [{
+      name  = "coder_hostname"
+      value = var.hostname
+    }, {
+      name  = "coder_lan_ip"
+      value = var.coder_lan_ip
+    }]
+  }]
+}
+
+resource "coderd_template" "workshop" {
+  count        = local.is_coderbox ? 1 : 0
+  name         = "workshop"
+  display_name = "Workshop: Wall of Names"
+  description  = "Say \"make my name blue\" — the agent forks the wall, adds your name, previews it, and opens a PR."
+  icon         = "/emojis/1fa84.png"
+
+  default_ttl_ms = local.autostop_ms
+
+  versions = [{
+    name      = var.version_name
+    directory = "${path.module}/../hosts/coderbox/templates/workshop"
+    active    = true
+    tf_vars   = [{
+      name  = "coder_hostname"
+      value = var.hostname
+    }, {
+      name  = "coder_lan_ip"
+      value = var.coder_lan_ip
+    }, {
+      name  = "anthropic_api_key"
+      value = var.workshop_anthropic_key
+    }, {
+      name  = "admin_coder_token"
+      value = var.workshop_admin_token
+    }]
+  }]
+}
+
 resource "coderd_template" "coder-cli" {
   name         = "coder-cli"
-  display_name = "Coder CLI Sandbox"
-  description  = "Docker workspace on codercom/oss-dogfood: docker CLI, terraform, gh, go, node. For Coder agent / CLI work."
+  display_name = "Universal Golden Path"
+  description  = "The standard paved road for any developer: full toolchain, browser IDE, and an AI agent, ready in seconds."
   icon         = "/icon/coder.svg"
 
   default_ttl_ms = local.autostop_ms
