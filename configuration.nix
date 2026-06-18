@@ -48,6 +48,7 @@ in
     ./nixos/tailscale.nix      # optional Tailscale (enable in hosts/<host>/local.nix)
     ./nixos/screenconnect.nix  # optional ScreenConnect client (enable in hosts/<host>/local.nix)
     ./nixos/workshop-tunnel.nix # optional Cloudflare Tunnel + single-click GitHub auth middleware (enable in hosts/<host>/local.nix)
+    ./nixos/workshop-keycloak.nix # optional Keycloak OIDC IdP (enable in hosts/<host>/local.nix)
   ];
 
   # ── NixOS option: SSH key sync ─────────────────────────────────────────────
