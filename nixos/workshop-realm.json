@@ -1,0 +1,62 @@
+{
+  "realm": "workshop",
+  "enabled": true,
+  "displayName": "Coder Workshop",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": true,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "sslRequired": "external",
+
+  "__comment_idp": "GitHub identity broker. clientSecret + clientId are injected at import time (kcadm or env substitution); NEVER commit real values. Default Scopes include repo so the brokered token can fork/push. storeToken=true keeps the token for the extauth-sync watcher.",
+  "identityProviders": [
+    {
+      "alias": "github",
+      "providerId": "github",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": true,
+      "storeToken": true,
+      "addReadTokenRoleOnCreate": true,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "__GITHUB_CLIENT_ID__",
+        "clientSecret": "__GITHUB_CLIENT_SECRET__",
+        "defaultScope": "repo read:org user:email",
+        "useJwksUrl": "true"
+      }
+    }
+  ],
+
+  "__comment_client": "Confidential OIDC client Coder uses for login. redirectUris must match Coder's OIDC callback on the apex. secret injected at import.",
+  "clients": [
+    {
+      "clientId": "coder",
+      "name": "Coder",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "secret": "__CODER_CLIENT_SECRET__",
+      "redirectUris": [
+        "https://dallas.cdr.dev/api/v2/users/oidc/callback"
+      ],
+      "webOrigins": [
+        "https://dallas.cdr.dev"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://dallas.cdr.dev/*"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email"
+      ]
+    }
+  ],
+
+  "__comment_scopes": "Ensure email + profile claims are present so Coder can map username/email and we can match users in the extauth-sync watcher."
+}
