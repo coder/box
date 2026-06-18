@@ -12,10 +12,9 @@
 # follow it (NVMe/SATA/USB/virtio) — the same property the old ext4 layout
 # got from filesystem labels.
 #
-# ZFS requires a unique networking.hostId per machine. A shared mkDefault
-# lives in configuration.nix so the prebuilt appliance images build; install.sh
-# writes a freshly generated, per-host hostId into hosts/<host>/default.nix so
-# every installed box is unique.
+# ZFS requires a unique networking.hostId per machine. configuration.nix
+# derives it in Nix from the hostname (first 8 hex digits of its sha256), so
+# every host with a distinct hostName gets a distinct id automatically.
 #
 # Hosts that follow this layout import the module and override the disk
 # device path if needed (the default is /dev/nvme0n1, the current demo box

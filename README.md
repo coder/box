@@ -88,7 +88,7 @@ default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 
 Two community tools do the heavy lifting:
 
-- [`disko`](https://github.com/nix-community/disko) declares partition layouts in Nix. `nixos/disko-standard.nix` is a single-disk UEFI layout (1 GB EFI / ZFS root pool; no on-disk swap — zram instead). `install.sh` picks the device at install time and writes a unique ZFS `networking.hostId` per host. ZFS gives cheap snapshots (auto-snapshot of the root dataset, so a bad rebuild rolls back in seconds), zstd compression, and checksum/scrub integrity.
+- [`disko`](https://github.com/nix-community/disko) declares partition layouts in Nix. `nixos/disko-standard.nix` is a single-disk UEFI layout (1 GB EFI / ZFS root pool; no on-disk swap — zram instead). `install.sh` picks the device at install time; the ZFS `networking.hostId` is derived in Nix from the hostname (sha256 substring), so each host gets a distinct id automatically. ZFS gives cheap snapshots (auto-snapshot of the root dataset, so a bad rebuild rolls back in seconds), zstd compression, and checksum/scrub integrity.
 - [`nixos-facter`](https://github.com/nix-community/nixos-facter) writes a JSON hardware report (`facter.json`) that replaces `hardware-configuration.nix` on new hosts. The `nixos-facter-modules` module reads it to set kernel modules, microcode, GPU drivers, and so on.
 
 ## Installing on a new machine

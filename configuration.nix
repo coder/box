@@ -110,11 +110,14 @@ in
     boot.supportedFilesystems = [ "zfs" ];
 
     # ZFS refuses to import a pool unless networking.hostId is set (it stamps
-    # the pool so it can't be imported on two machines at once). This shared
-    # mkDefault lets the prebuilt appliance images build and boot; install.sh
-    # writes a freshly generated, unique hostId into hosts/<host>/default.nix so
-    # every installed box differs. Override per-host if you ever clone an image.
-    networking.hostId = lib.mkDefault "c0de0b09";
+    # the pool so it can't be imported on two machines at once). Derive it in
+    # Nix from the hostname: the first 8 hex digits of its sha256. Deterministic
+    # per host, and since every install host gets a unique networking.hostName
+    # (flake.nix injects the folder name) each box ends up with a distinct id —
+    # no shell-side generation needed. mkDefault so a host can still override.
+    networking.hostId =
+      lib.mkDefault (builtins.substring 0 8
+        (builtins.hashString "sha256" config.networking.hostName));
 
     # Keep the pool healthy and SSDs happy: periodic scrub (verifies every
     # block against its checksum and self-heals where possible) and weekly TRIM.
