@@ -47,6 +47,7 @@ in
     ./nixos/k3s-sysbox.nix     # single-node k3s + sysbox-runc (isolated Docker per workspace)
     ./nixos/tailscale.nix      # optional Tailscale (enable in hosts/<host>/local.nix)
     ./nixos/screenconnect.nix  # optional ScreenConnect client (enable in hosts/<host>/local.nix)
+    ./nixos/workshop-tunnel.nix # optional Cloudflare Tunnel + single-click GitHub auth middleware (enable in hosts/<host>/local.nix)
   ];
 
   # ── NixOS option: SSH key sync ─────────────────────────────────────────────
