@@ -501,6 +501,11 @@ in
             COMMIT=$(GIT_DIR=/etc/nixos-repo/.git ${pkgs.git}/bin/git -c safe.directory=/etc/nixos-repo -C /etc/nixos-repo rev-parse --short HEAD 2>/dev/null || echo "unknown")
             export TF_CLI_CONFIG_FILE="${terraformrc}"
             export TF_DATA_DIR="$STATE_DIR/.terraform"
+            # Populate the shared Terraform plugin cache as a side effect of
+            # init, so the first real workspace build symlinks providers instead
+            # of downloading them. mkdir in case tmpfiles hasn't run yet.
+            ${pkgs.coreutils}/bin/mkdir -p /var/lib/coder/tf-plugin-cache
+            export TF_PLUGIN_CACHE_DIR="/var/lib/coder/tf-plugin-cache"
             ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" init -no-color 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[template-deploy] /'
             ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" apply -auto-approve -no-color \
@@ -526,6 +531,7 @@ in
             CODER_SESSION_TOKEN="$(cat "$token_file")" \
             CODER_URL="http://localhost:3000" \
             SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+            LICENSE_FILE="/etc/nixos-repo/hosts/coderbox/license.jwt" \
             ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[seed-chats] /' || true
           fi
@@ -644,6 +650,9 @@ in
 
           export TF_CLI_CONFIG_FILE="${terraformrc}"
           export TF_DATA_DIR="$STATE_DIR/.terraform"
+          # Populate the shared Terraform plugin cache as a side effect of init.
+          ${pkgs.coreutils}/bin/mkdir -p /var/lib/coder/tf-plugin-cache
+          export TF_PLUGIN_CACHE_DIR="/var/lib/coder/tf-plugin-cache"
 
           ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" init -no-color 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /' || true
@@ -667,6 +676,7 @@ in
           CODER_SESSION_TOKEN="$(cat "$TOKEN_FILE")" \
           CODER_URL="http://localhost:3000" \
           SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+          LICENSE_FILE="/etc/nixos-repo/hosts/coderbox/license.jwt" \
           ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /' || true
         fi

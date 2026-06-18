@@ -23,6 +23,7 @@ TOK="${CODER_SESSION_TOKEN:-}"
 [ -z "$TOK" ] && [ -r "$TOKEN_FILE" ] && TOK="$(cat "$TOKEN_FILE")"
 KEY="${ANTHROPIC_API_KEY:-}"
 PROMPT_FILE="${SYSTEM_PROMPT_FILE:-}"
+LICENSE_FILE="${LICENSE_FILE:-}"
 B="$URL/api/experimental/chats"
 
 log() { echo "[seed-chats] $*"; }
@@ -79,6 +80,21 @@ if [ -n "$PROMPT_FILE" ] && [ -r "$PROMPT_FILE" ]; then
     "$B/config/system-prompt" >/dev/null
 else
   log "no SYSTEM_PROMPT_FILE; leaving system prompt as-is."
+fi
+
+# 0. License (Premium features: prebuilds, etc.). Apply if a license file is set
+# and no active license exists yet. The license is stored in the DB (wiped by
+# coder-reset), so this restores it on every rebuild.
+if [ -n "$LICENSE_FILE" ] && [ -r "$LICENSE_FILE" ]; then
+  has_lic=$(curl -s -H "Coder-Session-Token: $TOK" "$URL/api/v2/entitlements" | jq -r '.has_license' 2>/dev/null)
+  if [ "$has_lic" = "true" ]; then
+    log "license already active; skipping."
+  else
+    log "applying license"
+    curl -s -X POST -H "Coder-Session-Token: $TOK" -H 'content-type: application/json' \
+      -d "$(jq -n --rawfile l "$LICENSE_FILE" '{license:($l|rtrimstr("\n"))}')" \
+      "$URL/api/v2/licenses" >/dev/null && log "license applied."
+  fi
 fi
 
 # 4. Virtual desktop experiment.
