@@ -318,6 +318,10 @@ in
       "d /etc/coder 0750 root coder -"
       "f /etc/coder/session-token 0600 coder coder -"
       "z /etc/coder/session-token 0600 coder coder -"
+      # Shared Terraform plugin cache. With TF_PLUGIN_CACHE_DIR set (below),
+      # `terraform init` for every workspace/template build symlinks providers
+      # from here instead of re-downloading them — much faster builds.
+      "d /var/lib/coder/tf-plugin-cache 0750 coder coder -"
     ];
 
     # ── Coder server ──────────────────────────────────────────────────────────
@@ -355,6 +359,10 @@ in
         # work without per-user keys. The Anthropic key is set in the host's
         # local.nix (gitignored). Routes via the claude-code module's gateway.
         CODER_AIBRIDGE_ENABLED         = "true";
+        # Shared Terraform plugin cache: `terraform init` symlinks providers
+        # from this dir instead of re-downloading on every build (faster builds).
+        # Dir is created by systemd.tmpfiles above, owned by coder.
+        TF_PLUGIN_CACHE_DIR            = "/var/lib/coder/tf-plugin-cache";
       };
 
       serviceConfig = {
