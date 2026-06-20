@@ -59,6 +59,22 @@ in
     description = "LAN IP of this box, used for CODER_AGENT_URL and k8s hostAliases so pods resolve the hostname without relying on mDNS. Set in the host's local.nix. Leave empty to fall back to hostname-based mDNS URL.";
   };
 
+  options.services.coder-nixos.devtunnelKey = lib.mkOption {
+    type        = lib.types.str;
+    default     = "";
+    description = ''
+      Contents of Coder's dev-tunnel keypair file
+      (~coder/.config/coderv2/devtunnel, a JSON blob with version/private_key/
+      public_key/tunnel). The public *.try.coder.app hostname is derived
+      deterministically from this keypair, so pinning it here keeps the tunnel
+      URL STABLE across coder-reset / reprovision / disk wipes. Set in the
+      host's gitignored local.nix (it contains a private key — never commit it).
+      Restored to disk only-if-missing on boot (see coder.service ExecStartPre),
+      so a live/working tunnel file is never clobbered. Empty = no pinning
+      (Coder generates a fresh key + URL on first run).
+    '';
+  };
+
   options.services.coder-sync-ssh-keys.githubUsers = lib.mkOption {
     type        = lib.types.listOf lib.types.str;
     default     = [];
@@ -373,7 +389,27 @@ in
         Group        = "coder";
         Restart      = "on-failure";
         RestartSec   = "5s";
-        ExecStartPre = "+${pkgs.coreutils}/bin/chown -R coder:coder /var/lib/coder";
+        ExecStartPre = [
+          "+${pkgs.coreutils}/bin/chown -R coder:coder /var/lib/coder"
+          # Pin the dev-tunnel URL: restore the keypair from local.nix
+          # (services.coder-nixos.devtunnelKey) ONLY IF the file is missing, so
+          # the public *.try.coder.app hostname survives a coder-reset / wipe.
+          # A live/working tunnel file is never overwritten. No-op when unset.
+          ("+" + (pkgs.writeShellScript "coder-restore-devtunnel" ''
+            set -eu
+            key=${lib.escapeShellArg config.services.coder-nixos.devtunnelKey}
+            [ -n "$key" ] || exit 0
+            dir=/var/lib/coder/.config/coderv2
+            f="$dir/devtunnel"
+            if [ ! -e "$f" ]; then
+              ${pkgs.coreutils}/bin/mkdir -p "$dir"
+              printf '%s' "$key" > "$f"
+              ${pkgs.coreutils}/bin/chown -R coder:coder "$dir"
+              ${pkgs.coreutils}/bin/chmod 600 "$f"
+              echo "restored pinned devtunnel keypair (URL will be stable)"
+            fi
+          ''))
+        ];
       };
     };
 
