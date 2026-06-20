@@ -1,4 +1,4 @@
-# nixos/workshop-keycloak.nix
+# nixos/workshop-keycloak/keycloak.nix
 #
 # Optional module: Keycloak as Coder's OIDC identity provider for the workshop.
 # Gives attendees ONE login that offers "Sign in with GitHub" (brokered, repo
@@ -187,7 +187,7 @@ in
         Type = "oneshot";
         User = "postgres";  # peer auth to BOTH coder + keycloak DBs
         Group = "postgres";
-        ExecStart = "${pkgs.python3}/bin/python3 ${./workshop-extauth-sync.py}";
+        ExecStart = "${pkgs.python3}/bin/python3 ${./extauth-sync.py}";
       };
     };
     systemd.timers.workshop-extauth-sync = {

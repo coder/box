@@ -5,6 +5,7 @@
 #
 # Seeds:
 #   - Anthropic provider (centralized key from env)
+#   - OpenAI provider (centralized key from env, when OPENAI_API_KEY is set)
 #   - model-configs: opus-4-5, sonnet-4-5, sonnet-4-6 (sonnet-4-6 = default)
 #   - workshop system prompt (from SYSTEM_PROMPT_FILE, include_default=true)
 #   - virtual desktop experiment enabled
@@ -13,7 +14,8 @@
 #   CODER_URL            default http://localhost:3000
 #   CODER_SESSION_TOKEN  admin token (else read TOKEN_FILE)
 #   TOKEN_FILE           default /etc/coder/session-token
-#   ANTHROPIC_API_KEY    centralized provider key (required to seed the provider)
+#   ANTHROPIC_API_KEY    centralized Anthropic provider key (optional)
+#   OPENAI_API_KEY       centralized OpenAI provider key (optional)
 #   SYSTEM_PROMPT_FILE   path to the workshop system prompt text
 set -uo pipefail
 
@@ -22,6 +24,7 @@ TOKEN_FILE="${TOKEN_FILE:-/etc/coder/session-token}"
 TOK="${CODER_SESSION_TOKEN:-}"
 [ -z "$TOK" ] && [ -r "$TOKEN_FILE" ] && TOK="$(cat "$TOKEN_FILE")"
 KEY="${ANTHROPIC_API_KEY:-}"
+OPENAI_KEY="${OPENAI_API_KEY:-}"
 PROMPT_FILE="${SYSTEM_PROMPT_FILE:-}"
 LICENSE_FILE="${LICENSE_FILE:-}"
 B="$URL/api/experimental/chats"
@@ -50,6 +53,20 @@ else
   log "creating anthropic provider"
   api -X POST -H 'content-type: application/json' \
     -d "$(jq -n --arg k "$KEY" '{provider:"anthropic", display_name:"Anthropic", enabled:true, api_key:$k, central_api_key_enabled:true, allow_user_api_key:false}')" \
+    "$B/providers" >/dev/null
+fi
+
+# 1b. OpenAI provider — same shape as Anthropic, seeded only when OPENAI_API_KEY
+# is set (so a host with no OpenAI key simply skips it). Idempotent.
+have_openai=$(api "$B/providers" | jq '[.[] | select(.provider=="openai" and (.has_api_key==true or .source=="database"))] | length' 2>/dev/null || echo 0)
+if [ "${have_openai:-0}" -ge 1 ]; then
+  log "configured openai provider already present; skipping provider create."
+elif [ -z "$OPENAI_KEY" ]; then
+  log "no OPENAI_API_KEY; skipping openai provider."
+else
+  log "creating openai provider"
+  api -X POST -H 'content-type: application/json' \
+    -d "$(jq -n --arg k "$OPENAI_KEY" '{provider:"openai", display_name:"OpenAI", enabled:true, api_key:$k, central_api_key_enabled:true, allow_user_api_key:false}')" \
     "$B/providers" >/dev/null
 fi
 

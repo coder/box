@@ -47,8 +47,8 @@ in
     ./nixos/k3s-sysbox.nix     # single-node k3s + sysbox-runc (isolated Docker per workspace)
     ./nixos/tailscale.nix      # optional Tailscale (enable in hosts/<host>/local.nix)
     ./nixos/screenconnect.nix  # optional ScreenConnect client (enable in hosts/<host>/local.nix)
-    ./nixos/workshop-tunnel.nix # optional Cloudflare Tunnel + single-click GitHub auth middleware (enable in hosts/<host>/local.nix)
-    ./nixos/workshop-keycloak.nix # optional Keycloak OIDC IdP (enable in hosts/<host>/local.nix)
+    ./nixos/workshop-keycloak/tunnel.nix # optional Cloudflare Tunnel + single-click GitHub auth middleware (enable in hosts/<host>/local.nix)
+    ./nixos/workshop-keycloak/keycloak.nix # optional Keycloak OIDC IdP (enable in hosts/<host>/local.nix)
   ];
 
   # ── NixOS option: SSH key sync ─────────────────────────────────────────────
@@ -515,7 +515,6 @@ in
               -var="coder_session_token=$(cat "$token_file")" \
               -var="hostname=${config.networking.hostName}" \
               -var="version_name=$COMMIT" \
-              -var="workshop_anthropic_key=${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
               -var="workshop_admin_token=$(cat "$token_file")" \
               -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[template-deploy] /'
@@ -530,9 +529,10 @@ in
           if [ -x /etc/nixos-repo/coderd/seed/seed-chats.sh ]; then
             PATH="${pkgs.curl}/bin:${pkgs.jq}/bin:$PATH" \
             ANTHROPIC_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+            OPENAI_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_OPENAI_KEY or ""}" \
             CODER_SESSION_TOKEN="$(cat "$token_file")" \
             CODER_URL="http://localhost:3000" \
-            SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+            SYSTEM_PROMPT_FILE="/etc/nixos-repo/hosts/coderbox/workshop-system-prompt.txt" \
             LICENSE_FILE="/etc/nixos-repo/hosts/coderbox/license.jwt" \
             ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[seed-chats] /' || true
@@ -702,7 +702,6 @@ in
             -var="coder_session_token=$(cat "$TOKEN_FILE")" \
             -var="hostname=${config.networking.hostName}" \
             -var="version_name=$COMMIT" \
-            -var="workshop_anthropic_key=${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
             -var="workshop_admin_token=$(cat "$TOKEN_FILE")" \
             -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /'
@@ -714,9 +713,10 @@ in
           # restores the AI config on every rebuild/reset.
           PATH="${pkgs.curl}/bin:${pkgs.jq}/bin:$PATH" \
           ANTHROPIC_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_ANTHROPIC_KEY or ""}" \
+          OPENAI_API_KEY="${config.systemd.services.coder.environment.CODER_AIBRIDGE_OPENAI_KEY or ""}" \
           CODER_SESSION_TOKEN="$(cat "$TOKEN_FILE")" \
           CODER_URL="http://localhost:3000" \
-          SYSTEM_PROMPT_FILE="/etc/nixos-repo/coderd/seed/workshop-system-prompt.txt" \
+          SYSTEM_PROMPT_FILE="/etc/nixos-repo/hosts/coderbox/workshop-system-prompt.txt" \
           LICENSE_FILE="/etc/nixos-repo/hosts/coderbox/license.jwt" \
           ${pkgs.bash}/bin/bash /etc/nixos-repo/coderd/seed/seed-chats.sh 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /' || true

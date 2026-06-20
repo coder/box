@@ -172,6 +172,53 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 - **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree: `--flake /etc/nixos-repo` (or `cd /etc/nixos-repo && nixos-rebuild switch --flake .`).
 - **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/facter.json`.
 - **ScreenConnect blank screen** — if SC shows a black/blank view, SDDM may have fallen back to Wayland. Ensure `services.displayManager.sddm.wayland.enable = false` and `services.displayManager.defaultSession = "plasmax11"` in `configuration.nix`, then `nixos-rebuild boot && reboot`.
+- **Pods reach Coder at the LAN/cluster IP, not `localhost`.** Anything running
+  inside a workspace pod (a server, a `curl` to the API) must use the in-cluster
+  Coder address (e.g. `http://10.42.0.1:3000` on k3s, or the `hostAliases`
+  `<hostname>.local`), set via `services.coder-nixos.lanIp`. `localhost` in a
+  pod is the pod itself.
+- **`kubectl exec` + shell backgrounding kills the job.** Starting
+  `node serve.js &` inside `kubectl exec` often SIGTERMs the whole exec
+  (RC 143). Start detached (`nohup … & disown`) and verify from a *separate*
+  exec; `pkill -f serve.js` can kill the exec shell too — match narrowly or
+  kill by pid.
+- **Chat-agent tool cwd is `/root`, not the workspace `$HOME`.** Agent file
+  tools default to `/root`; use absolute workspace paths (e.g.
+  `/home/node/...`) in agent instructions or tools hit "permission denied".
+- **Template `version_name` must be unique** — `coderd` template-sync fails with
+  409 on reuse. Use a timestamp / commit SHA (`ws-$(date +%H%M%S)`).
+
+## AI Agents (experimental chats) & AI Gateway
+
+The deployment can run Coder's **experimental "Agents" (chats)** feature and the
+**AI Gateway** (formerly "AI Bridge"). Both are configured in the DB, not via
+flake files, and both are **wiped by `coder-reset`** — re-seed after a reset.
+`coderd/seed/seed-chats.sh` (run by the template-sync activation on every
+rebuild) restores the provider(s), model-configs, system prompt, and license.
+
+- **Chats API lives under `/api/experimental/chats/...`**, NOT `/api/v2`.
+  Guessing `v2` paths 404s. Key endpoints: `…/providers`, `…/model-configs`,
+  `…/config/system-prompt` (PUT), `…/config/desktop-enabled` (PUT).
+- **AI Gateway lives under `/api/v2/aibridge/...`** and needs the **AI
+  Governance add-on** (Premium). With a license it works on OSS too. Clients
+  (Claude Code, Codex, IDEs) authenticate with a **Coder token**, not a raw
+  provider key:
+  ```sh
+  export ANTHROPIC_BASE_URL="<access-url>/api/v2/aibridge/anthropic"
+  export ANTHROPIC_AUTH_TOKEN="<coder-token>"   # centralized mode
+  ```
+  The provider key lives once in the deployment
+  (`CODER_AIBRIDGE_ANTHROPIC_KEY` / `CODER_AIBRIDGE_OPENAI_KEY` from the host's
+  gitignored `local.nix`) and seeds the gateway provider. **Don't pass provider
+  keys through Terraform/template vars** — route through the gateway instead.
+  The Coder `claude-code` registry module supports this via
+  `enable_ai_gateway = true`.
+- **`seed-chats.sh` is generic and self-skipping:** it seeds an Anthropic
+  provider only if `ANTHROPIC_API_KEY` is set, an OpenAI provider only if
+  `OPENAI_API_KEY` is set, and the system prompt only if `SYSTEM_PROMPT_FILE`
+  points at an existing file. A host with none of these set is a clean no-op.
+  Host-specific inputs (e.g. the workshop system prompt) live in
+  `hosts/<host>/` and are wired in via `configuration.nix`.
 
 ## Wildcard App Access (TODO)
 

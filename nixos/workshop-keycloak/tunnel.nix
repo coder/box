@@ -1,4 +1,4 @@
-# nixos/workshop-tunnel.nix
+# nixos/workshop-keycloak/tunnel.nix
 #
 # Optional module: stable public domain via Cloudflare Tunnel + a single-click
 # GitHub auth middleware in front of Coder.
@@ -29,7 +29,7 @@
 let
   cfg = config.services.workshop-tunnel;
 
-  middlewarePy = pkgs.writeText "workshop-middleware.py" (builtins.readFile ./workshop-middleware.py);
+  middlewarePy = pkgs.writeText "workshop-middleware.py" (builtins.readFile ./middleware.py);
 
   # Ingress config for cloudflared. Apex -> middleware, wildcard -> Coder direct.
   cfTunnelConfig = pkgs.writeText "cloudflared-config.yml" ''

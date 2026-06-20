@@ -38,15 +38,15 @@ variable "version_name" {
   default = "latest"
 }
 
-# Secrets for the workshop admin Wall-of-Fame display. Sourced from the box's
+# Secret for the workshop admin Wall-of-Fame display. Sourced from the box's
 # gitignored local.nix via the coder-template-sync activation script. Default
 # empty so other machines / a missing value simply disable the admin stack.
-variable "workshop_anthropic_key" {
-  type      = string
-  default   = ""
-  sensitive = true
-}
-
+#
+# NOTE: the Anthropic key is NOT passed here. AI access (attendee Claude Code
+# AND the admin PR-review bot) goes through Coder's AI Gateway, authenticated
+# with the user's Coder token. The provider key lives once in the deployment
+# (CODER_AIBRIDGE_ANTHROPIC_KEY from local.nix) and never flows through
+# Terraform. See hosts/coderbox/templates/workshop/main.tf.
 variable "workshop_admin_token" {
   type      = string
   default   = ""
@@ -208,9 +208,6 @@ resource "coderd_template" "workshop" {
     }, {
       name  = "coder_lan_ip"
       value = var.coder_lan_ip
-    }, {
-      name  = "anthropic_api_key"
-      value = var.workshop_anthropic_key
     }, {
       name  = "admin_coder_token"
       value = var.workshop_admin_token
