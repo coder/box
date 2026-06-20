@@ -61,7 +61,7 @@ in
         "--disable=servicelb"
 
         # Ensure the node registers with the machine's hostname.
-        "--node-name=${config.networking.hostName}"
+        "--node-name=coder-node"
 
         # Single-node: bind API server on all interfaces so Terraform can
         # reach 127.0.0.1:6443 from within the coder service.

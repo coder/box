@@ -168,6 +168,7 @@ in
         "--disable=traefik"
         "--disable=servicelb"
         "--kubelet-arg=cgroup-driver=systemd"
+        "--node-name=coder-node"
         "--tls-san=${config.networking.hostName}.local"
       ];
 

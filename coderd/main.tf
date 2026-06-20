@@ -65,7 +65,7 @@ provider "coderd" {
 
 locals {
   is_thinkcentre = var.hostname == "coder-thinkcentre"
-  is_coderbox    = var.hostname == "coderbox"
+  is_coderbox    = var.hostname == "coderbox" || var.hostname == "coderbox-dallas"
 
   # Workspace lifecycle policy (applied to all templates)
   # Autostop: workspace stops 24h after last activity bump.
