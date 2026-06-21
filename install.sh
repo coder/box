@@ -397,22 +397,20 @@ if [[ -z "$DISK_ARG" ]]; then
   mapfile -t DISKS < <(list_disks)
   # Always offer "Other …" so a user can type a path the auto-detection missed
   # (unusual controllers, /dev/mapper, etc.); it's the only choice when no
-  # eligible disks were found.
-  OTHER_LABEL="Other (enter a disk path manually)"
-  SEP_LABEL="──────────"
-  # Build the choice list: detected disks, a separator (only when there are
-  # disks to separate from), then "Other".
-  CHOICES=("${DISKS[@]}")
-  [[ ${#DISKS[@]} -gt 0 ]] && CHOICES+=("$SEP_LABEL")
-  CHOICES+=("$OTHER_LABEL")
-  while :; do
-    sel="$(printf '%s\n' "${CHOICES[@]}" \
-      | gum choose --header "Install to which disk? (it WILL be wiped)")" \
-      || { echo "no disk selected" >&2; exit 1; }
-    [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
-    # The separator is decorative; re-prompt if it's picked.
-    [[ "$sel" == "$SEP_LABEL" ]] || break
-  done
+  # eligible disks were found. gum choose has no non-selectable rows, so instead
+  # of a separate divider line (which would be focusable), the divider is fused
+  # into the "Other" label — it stands apart visually but isn't its own pickable
+  # item. The leading divider is only shown when there are disks to separate from.
+  OTHER_TEXT="Other (enter a disk path manually)"
+  if [[ ${#DISKS[@]} -gt 0 ]]; then
+    OTHER_LABEL="────────  $OTHER_TEXT"
+  else
+    OTHER_LABEL="$OTHER_TEXT"
+  fi
+  sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
+    | gum choose --header "Install to which disk? (it WILL be wiped)")" \
+    || { echo "no disk selected" >&2; exit 1; }
+  [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
   if [[ "$sel" == "$OTHER_LABEL" ]]; then
     DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
       || { echo "no disk entered" >&2; exit 1; }
@@ -424,10 +422,14 @@ if [[ -z "$DISK_ARG" ]]; then
 fi
 [[ -b "$DISK_ARG" ]] || { echo "not a block device: $DISK_ARG" >&2; exit 1; }
 
-resolve_value ADMIN_EMAIL_ARG "Coder admin email" "$DEFAULT_ADMIN_EMAIL" \
-  --default-flag EMAIL_IS_DEFAULT
-resolve_value ADMIN_PASSWORD_ARG "Coder admin password" "$DEFAULT_ADMIN_PASSWORD" \
-  --secret --default-flag PASSWORD_IS_DEFAULT
+# Prompt order mirrors the summary/log ordering: LAN IP, NixOS login creds,
+# then Coder admin creds.
+#
+# LAN IP: the auto-detected value is the default ("none" when nothing detected,
+# which we map back to empty so downstream treats it as "no IP detected").
+LAN_IP_DEFAULT="$(detect_lan_ip || true)"
+resolve_value LAN_IP_ARG "LAN IP" "${LAN_IP_DEFAULT:-none}"
+[[ "$LAN_IP_ARG" == "none" ]] && LAN_IP_ARG=""
 
 resolve_value NIXOS_USERNAME_ARG "NixOS login user" "$DEFAULT_NIXOS_USERNAME" \
   --validate validate_username --default-flag NIXOS_USERNAME_IS_DEFAULT
@@ -435,11 +437,10 @@ validate_username "$NIXOS_USERNAME_ARG"
 resolve_value NIXOS_PASSWORD_ARG "NixOS login password" "$DEFAULT_NIXOS_PASSWORD" \
   --secret --default-flag NIXOS_PASSWORD_IS_DEFAULT
 
-# LAN IP: the auto-detected value is the default ("none" when nothing detected,
-# which we map back to empty so downstream treats it as "no IP detected").
-LAN_IP_DEFAULT="$(detect_lan_ip || true)"
-resolve_value LAN_IP_ARG "LAN IP" "${LAN_IP_DEFAULT:-none}"
-[[ "$LAN_IP_ARG" == "none" ]] && LAN_IP_ARG=""
+resolve_value ADMIN_EMAIL_ARG "Coder admin email" "$DEFAULT_ADMIN_EMAIL" \
+  --default-flag EMAIL_IS_DEFAULT
+resolve_value ADMIN_PASSWORD_ARG "Coder admin password" "$DEFAULT_ADMIN_PASSWORD" \
+  --secret --default-flag PASSWORD_IS_DEFAULT
 
 # Existing host folder?
 HOST_DIR="$REPO_DIR/hosts/$HOSTNAME_ARG"
