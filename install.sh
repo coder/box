@@ -451,27 +451,48 @@ if [[ -d "$HOST_DIR" ]]; then
 fi
 
 # ── Summary + confirm ──────────────────────────────────────────────────────
+# Shared summary printer for both the pre-install ("ready") and post-install
+# ("installed") views. They differ only in: the "ready" view shows the hardware
+# line, labels the disk "(will wipe)", and flags values left at their defaults.
+# Passwords are masked unless they're the well-known default (shown so the user
+# knows it's in use).
+print_summary() {
+  local mode="$1"
+  local row="  %-21s %s\n"
+  local disk_label="Disk:" mark_host="" mark_email="" mark_user=""
+  if [[ "$mode" == "ready" ]]; then
+    disk_label="Disk (will wipe):"
+    [[ $HOSTNAME_IS_DEFAULT       -eq 1 ]] && mark_host="  (default)"
+    [[ $EMAIL_IS_DEFAULT          -eq 1 ]] && mark_email="  (default)"
+    [[ $NIXOS_USERNAME_IS_DEFAULT -eq 1 ]] && mark_user="  (default)"
+  fi
+  local masked_nixos_pw masked_admin_pw
+  masked_nixos_pw="$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
+  masked_admin_pw="$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
+
+  # shellcheck disable=SC2059  # $row is an intentional, fixed format string.
+  printf "$row" "Hostname:" "$HOSTNAME_ARG$mark_host"
+  [[ "$mode" == "ready" ]] && printf "$row" "Hardware:" "$HARDWARE_DESC_ARG"
+  printf "$row" "$disk_label" "$DISK_ARG"
+  printf "$row" "LAN IP:" "${LAN_IP_ARG:-(none detected)}"
+  printf "$row" "NixOS login user:" "$NIXOS_USERNAME_ARG$mark_user"
+  if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
+    printf "$row" "NixOS login password:" "$NIXOS_PASSWORD_ARG  (default)"
+  else
+    printf "$row" "NixOS login password:" "$masked_nixos_pw"
+  fi
+  printf "$row" "Coder admin email:" "$ADMIN_EMAIL_ARG$mark_email"
+  if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
+    printf "$row" "Coder admin password:" "$ADMIN_PASSWORD_ARG  (default)"
+  else
+    printf "$row" "Coder admin password:" "$masked_admin_pw"
+  fi
+}
+
 echo
+echo "────────────────────────────────────────────────────────────"
 echo "Ready to install:"
-printf "  Hostname:             %s%s\n" "$HOSTNAME_ARG" \
-  "$( [[ $HOSTNAME_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
-printf "  Hardware:             %s\n" "$HARDWARE_DESC_ARG"
-printf "  Disk (will wipe):     %s\n" "$DISK_ARG"
-printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
-printf "  NixOS login user:     %s%s\n" "$NIXOS_USERNAME_ARG" \
-  "$( [[ $NIXOS_USERNAME_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
-if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  NixOS login password: %s  (default)\n" "$NIXOS_PASSWORD_ARG"
-else
-  printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
-printf "  Coder admin email:    %s%s\n" "$ADMIN_EMAIL_ARG" \
-  "$( [[ $EMAIL_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
-if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
-else
-  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
+print_summary ready
 if [[ $HOSTNAME_IS_DEFAULT -eq 1 || $EMAIL_IS_DEFAULT -eq 1 || $PASSWORD_IS_DEFAULT -eq 1 \
    || $NIXOS_USERNAME_IS_DEFAULT -eq 1 || $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   echo
@@ -658,21 +679,7 @@ echo
 echo "✓ Installation complete."
 echo
 echo "Installed:"
-printf "  Hostname:             %s\n" "$HOSTNAME_ARG"
-printf "  Disk:                 %s\n" "$DISK_ARG"
-printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
-printf "  NixOS login user:     %s\n" "$NIXOS_USERNAME_ARG"
-if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  NixOS login password: %s  (default)\n" "$NIXOS_PASSWORD_ARG"
-else
-  printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
-printf "  Coder admin email:    %s\n" "$ADMIN_EMAIL_ARG"
-if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
-else
-  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
+print_summary installed
 echo
 echo "Coder web UI after reboot:"
 echo "  http://${HOSTNAME_ARG}.local        (port 80 redirects to the *.try.coder.app tunnel URL)"
