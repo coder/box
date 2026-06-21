@@ -1,13 +1,13 @@
-# Eval Nix — fast validation that the flake still evaluates and the installer
-# ISO derivation instantiates.
+# Eval Nix — fast validation that the flake still evaluates and the ISO
+# derivations instantiate.
 #
 # Unlike Build ISO / Build and release ISO (which realise the full multi-GB
-# image and only run for ready PRs / tags), this is cheap and runs on EVERY
-# commit and pull request. It instantiates the installer ISO derivation — i.e.
-# fully evaluates the Nix and writes the .drv to the store — but never builds
-# it (`nix eval ... .drvPath` forces instantiation without realisation). A
-# typo, bad reference, or type error in the Nix surfaces here in seconds
-# instead of after a long image build.
+# images and only run for ready PRs / tags), this is cheap and runs on EVERY
+# commit and pull request. It instantiates the installer + appliance ISO
+# derivations via the Makefile's `*/drv` targets — i.e. fully evaluates the Nix
+# and writes the .drv to the store, but never builds the image. A typo, bad
+# reference, or type error in the Nix surfaces here in seconds instead of after
+# a long image build.
 #
 # Both architectures are instantiated on a single x86_64 runner: evaluating an
 # aarch64-linux derivation needs no aarch64 builder (only realisation would).
@@ -32,13 +32,13 @@ concurrency:
 
 jobs:
   eval:
-    name: instantiate installer/iso
+    name: instantiate ISO derivations
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Instantiate installer ISO derivation (in nixos/nix container)
+      - name: Instantiate ISO derivations (in nixos/nix container)
         run: |
           docker run --rm \
             -v "$PWD":/work -w /work \
@@ -46,18 +46,10 @@ jobs:
             sh -euc '
               export NIX_CONFIG="experimental-features = nix-command flakes"
               git config --global --add safe.directory /work
-              # Mirror the Makefile build expr (path flakeref + per-arch
-              # hostPlatform override), but evaluate .drvPath so Nix
-              # instantiates the derivation (writes the .drv) WITHOUT building
-              # the ISO. Done for both supported architectures.
-              for system in x86_64-linux aarch64-linux; do
-                echo "==> instantiating installer/iso for $system"
-                drv=$(nix eval --impure --raw --expr "
-                  let f = builtins.getFlake (toString ./.); in
-                  (f.nixosConfigurations._installer-iso.extendModules {
-                    modules = [ { nixpkgs.hostPlatform = \"$system\"; } ];
-                  }).config.system.build.isoImage.drvPath
-                ")
-                echo "    $drv"
-              done
+              # `*/drv` targets evaluate .drvPath (instantiate without build).
+              # Do both arches for each image; aarch64 eval needs no builder.
+              nix-shell -p gnumake git --run "
+                make installer/drv/x86_64-linux installer/drv/aarch64-linux \
+                     appliance/drv/x86_64-linux appliance/drv/aarch64-linux
+              "
             '

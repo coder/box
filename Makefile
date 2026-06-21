@@ -13,6 +13,13 @@
 #
 #   make installer/iso
 #
+# For cheap validation (CI, quick "does the Nix evaluate?" checks) there are
+# instantiate-only targets that evaluate the derivation and write its .drv to
+# the store WITHOUT building the multi-GB image:
+#
+#   make installer/drv
+#   make appliance/drv
+#
 # Each target also takes an architecture suffix; short names are normalized to
 # a *-linux triple (e.g. aarch64 -> aarch64-linux):
 #
@@ -70,7 +77,19 @@ define box_build
 	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2)'
 endef
 
-.PHONY: installer/iso appliance/iso appliance/qcow2 appliance/raw
+# Instantiate-only counterpart to box_build: same flake expr, but evaluates
+# `.drvPath` so Nix fully evaluates the config and writes the .drv to the store
+# WITHOUT realising the (multi-GB) image. Cheap CI validation that the Nix is
+# sound. Prints the resulting store .drv path. No ./out GC-root link: there's no
+# built output to anchor, and the .drv itself is a GC root until next gc.
+#   $(1) = host   $(2) = system.build.<attr>   $(3) = extra module fields   $(4) = arch token
+define box_instantiate
+	$(NIX) eval --impure --no-write-lock-file --raw --expr \
+	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2).drvPath'
+	@echo
+endef
+
+.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 
@@ -80,11 +99,23 @@ installer/iso:
 installer/iso/%:
 	$(call box_build,_installer-iso,isoImage,,$*)
 
+# ── installer/drv — instantiate the installer ISO derivation (no build) ───────
+installer/drv:
+	$(call box_instantiate,_installer-iso,isoImage,,)
+installer/drv/%:
+	$(call box_instantiate,_installer-iso,isoImage,,$*)
+
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:
 	$(call box_build,_appliance_iso,isoImage,,)
 appliance/iso/%:
 	$(call box_build,_appliance_iso,isoImage,,$*)
+
+# ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
+appliance/drv:
+	$(call box_instantiate,_appliance_iso,isoImage,,)
+appliance/drv/%:
+	$(call box_instantiate,_appliance_iso,isoImage,,$*)
 
 # ── appliance/qcow2 — persistent disk image (hosts/_appliance-disk) ──────────
 appliance/qcow2:
