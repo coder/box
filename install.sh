@@ -453,6 +453,7 @@ if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
 else
   printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
+printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 printf "  NixOS login user:     %s%s\n" "$NIXOS_USERNAME_ARG" \
   "$( [[ $NIXOS_USERNAME_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
 if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
@@ -460,7 +461,6 @@ if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
 else
   printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
-printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 if [[ $HOSTNAME_IS_DEFAULT -eq 1 || $EMAIL_IS_DEFAULT -eq 1 || $PASSWORD_IS_DEFAULT -eq 1 \
    || $NIXOS_USERNAME_IS_DEFAULT -eq 1 || $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   echo
@@ -655,13 +655,13 @@ if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
 else
   printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
+printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 printf "  NixOS login user:     %s\n" "$NIXOS_USERNAME_ARG"
 if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   printf "  NixOS login password: %s  (default)\n" "$NIXOS_PASSWORD_ARG"
 else
   printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
-printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 echo
 echo "Coder web UI after reboot:"
 echo "  http://${HOSTNAME_ARG}.local        (port 80 redirects to the *.try.coder.app tunnel URL)"
