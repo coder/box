@@ -59,6 +59,12 @@ in
     description = "LAN IP of this box, used for CODER_AGENT_URL and k8s hostAliases so pods resolve the hostname without relying on mDNS. Set in the host's local.nix. Leave empty to fall back to hostname-based mDNS URL.";
   };
 
+  options.services.coder-nixos.keycloakUrl = lib.mkOption {
+    type        = lib.types.str;
+    default     = "";
+    description = "Base URL of the workshop Keycloak (Railway) instance that brokers GitHub. Passed to the workshop template (keycloak_url tf_var) so workspaces fetch the owner's repo-scoped GitHub token via the OIDC broker. Set in the host's local.nix. Empty disables the broker fetch.";
+  };
+
   options.services.coder-nixos.devtunnelKey = lib.mkOption {
     type        = lib.types.str;
     default     = "";
@@ -384,7 +390,13 @@ in
       };
 
       serviceConfig = {
-        ExecStart    = "${coder}/bin/coder server";
+        # The --external-auth-github-default-provider-enable flag is set via CLI
+        # (NOT env): the CODER_EXTERNAL_AUTH_* env prefix is parsed greedily as
+        # provider configs, so CODER_EXTERNAL_AUTH_GITHUB_DEFAULT_PROVIDER_ENABLE
+        # crashes coderd ("parse number: GITHUB..."). The flag form avoids that.
+        # Disabled because login is OIDC (Keycloak) and the workshop fetches the
+        # GitHub token via the OIDC broker — no Coder external-auth provider.
+        ExecStart    = "${coder}/bin/coder server --external-auth-github-default-provider-enable=false";
         User         = "coder";
         Group        = "coder";
         Restart      = "on-failure";
@@ -552,6 +564,7 @@ in
               -var="hostname=${config.networking.hostName}" \
               -var="version_name=$COMMIT" \
               -var="workshop_admin_token=$(cat "$token_file")" \
+              -var="workshop_keycloak_url=${config.services.coder-nixos.keycloakUrl}" \
               -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[template-deploy] /'
             touch "$templates_sentinel"
@@ -739,6 +752,7 @@ in
             -var="hostname=${config.networking.hostName}" \
             -var="version_name=$COMMIT" \
             -var="workshop_admin_token=$(cat "$TOKEN_FILE")" \
+            -var="workshop_keycloak_url=${config.services.coder-nixos.keycloakUrl}" \
             -var="coder_lan_ip=${config.services.coder-nixos.lanIp}" 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /'
 

@@ -53,6 +53,12 @@ variable "workshop_admin_token" {
   sensitive = true
 }
 
+variable "workshop_keycloak_url" {
+  type        = string
+  default     = ""
+  description = "Base URL of the Keycloak (Railway) instance brokering GitHub for the workshop. Sourced from local.nix. The workshop template uses it to fetch the owner's repo-scoped GitHub token via the OIDC broker."
+}
+
 provider "coderd" {
   url   = var.coder_url
   token = var.coder_session_token
@@ -211,6 +217,9 @@ resource "coderd_template" "workshop" {
     }, {
       name  = "admin_coder_token"
       value = var.workshop_admin_token
+    }, {
+      name  = "keycloak_url"
+      value = var.workshop_keycloak_url
     }]
   }]
 }
