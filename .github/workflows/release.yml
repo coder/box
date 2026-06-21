@@ -1,20 +1,20 @@
-# Release — builds the installer ISO for every supported architecture and
-# publishes them as assets on a GitHub Release.
+# Build and release ISO — builds the installer AND appliance ISOs for every
+# supported architecture and publishes them as assets on a GitHub Release.
 #
 # Trigger either way:
 #   * push a tag matching v*  (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
-#   * run manually from the Actions tab (workflow_dispatch) and supply a tag.
+#   * run manually from the Actions tab (workflow_dispatch), supplying a tag
+#     and optionally a ref/commit to build.
 #
 # Like build.yml, each arch builds natively and the build runs inside the
 # `nixos/nix` container via `docker run` (the whole job can't use `container:`
 # because that image lacks a glibc loader for GitHub's bundled Node, which
-# breaks every JS action). Bare `make installer/iso` resolves to the runner's
-# native currentSystem and produces
-# out/installer-iso/iso/coder-box-installer-<arch>-linux.iso, which we copy out
-# of the ephemeral container store into the mounted workspace. The release job
-# then gathers both ISOs and attaches them to the release.
+# breaks every JS action). Bare `make <target>` resolves to the runner's native
+# currentSystem; the resulting ISO is copied out of the ephemeral container
+# store into a host mktemp dir. The release job gathers all ISOs and attaches
+# them (with sha256 checksums) to the release.
 
-name: release
+name: Build and release ISO
 
 on:
   push:
@@ -24,6 +24,10 @@ on:
       tag:
         description: "Release tag to create/publish (e.g. v1.2.0)"
         required: true
+        type: string
+      ref:
+        description: "Git ref/commit to build (defaults to the tag/branch)"
+        required: false
         type: string
       prerelease:
         description: "Mark the release as a pre-release"
@@ -38,11 +42,12 @@ concurrency:
 
 jobs:
   build:
-    name: installer/iso (${{ matrix.system }})
+    name: ${{ matrix.target }} (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
+        target: [installer/iso, appliance/iso]
         include:
           - system: x86_64-linux
             runner: ubuntu-24.04
@@ -50,36 +55,47 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          # Empty for tag push (checks out the tag); honored for manual dispatch
+          # to release an arbitrary commit.
+          ref: ${{ github.event.inputs.ref }}
 
-      - name: Build installer ISO (in nixos/nix container)
+      - name: Build ISO (in nixos/nix container)
+        id: build
         env:
+          TARGET: ${{ matrix.target }}
           SYSTEM: ${{ matrix.system }}
         run: |
+          # Host temp dir, bind-mounted into the container, where the build
+          # drops the finished ISO (the container's /nix/store is ephemeral).
+          outdir="$(mktemp -d)"
+          echo "outdir=$outdir" >>"$GITHUB_OUTPUT"
+          outlink="out/$(echo "$TARGET" | tr '/' '-')/iso"
+          kind="${TARGET%%/*}"
           docker run --rm \
             -v "$PWD":/work -w /work \
-            -e SYSTEM \
+            -v "$outdir":/out \
+            -e TARGET -e SYSTEM \
             nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
+            sh -euc "
+              export NIX_CONFIG='experimental-features = nix-command flakes'
               git config --global --add safe.directory /work
-              # gnumake provides `make`; git lets the Makefile stamp the rev.
-              nix-shell -p gnumake git --run "make installer/iso"
-              # Copy the ISO out of the (ephemeral) container /nix/store and
-              # checksum it so release consumers can verify the download.
-              mkdir -p dist
-              cp -L "out/installer-iso/iso/coder-box-installer-$SYSTEM.iso" \
-                "dist/coder-box-installer-$SYSTEM.iso"
-              cd dist && sha256sum "coder-box-installer-$SYSTEM.iso" \
-                >"coder-box-installer-$SYSTEM.iso.sha256"
-            '
-          ls -lh dist/
+              # gnumake provides 'make'; git lets the Makefile stamp the rev.
+              nix-shell -p gnumake git --run \"make $TARGET\"
+              cp -L '$outlink/coder-box-$kind-$SYSTEM.iso' \
+                '/out/coder-box-$kind-$SYSTEM.iso'
+              # Checksum so release consumers can verify the download.
+              cd /out && sha256sum 'coder-box-$kind-$SYSTEM.iso' \
+                >'coder-box-$kind-$SYSTEM.iso.sha256'
+            "
+          ls -lh "$outdir"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: coder-box-installer-${{ matrix.system }}
-          path: dist/coder-box-installer-${{ matrix.system }}.iso*
+          name: coder-box-${{ matrix.target == 'installer/iso' && 'installer' || 'appliance' }}-${{ matrix.system }}
+          path: ${{ steps.build.outputs.outdir }}/*.iso*
           if-no-files-found: error
 
   release:
@@ -101,7 +117,7 @@ jobs:
           echo "Releasing tag: $tag"
 
       - name: Download built ISOs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
@@ -117,8 +133,6 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ github.event.inputs.prerelease || false }}
           files: |
-            dist/coder-box-installer-x86_64-linux.iso
-            dist/coder-box-installer-x86_64-linux.iso.sha256
-            dist/coder-box-installer-aarch64-linux.iso
-            dist/coder-box-installer-aarch64-linux.iso.sha256
+            dist/*.iso
+            dist/*.iso.sha256
           fail_on_unmatched_files: true

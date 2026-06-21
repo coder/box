@@ -1,4 +1,5 @@
-# Build CI — builds the installer ISO for every supported architecture.
+# Build ISO — builds the installer AND appliance ISOs for every supported
+# architecture.
 #
 # Each arch builds on a native runner; the build itself runs inside the
 # official `nixos/nix` container via `docker run`. We deliberately do NOT put
@@ -8,37 +9,51 @@
 # directory`. So checkout/upload run on the host runner and only `make` runs in
 # the container.
 #
-# Bare `make installer/iso` resolves to the runner's native
-# `builtins.currentSystem` (x86_64-linux or aarch64-linux) and produces
-# out/installer-iso/iso/coder-box-installer-<arch>-linux.iso inside the
-# container; we copy it into the mounted workspace (dist/) because the
-# container's /nix/store does not persist on the host after it exits.
+# Bare `make <target>` resolves to the runner's native `builtins.currentSystem`
+# (x86_64-linux or aarch64-linux) and produces
+# out/<target>/iso/coder-box-<kind>-<arch>-linux.iso inside the container. The
+# container /nix/store is ephemeral, so we copy the ISOs into a host mktemp dir
+# bind-mounted at /out and upload from there.
 #
-# This is a verification build: it proves both ISOs still build. The artifacts
-# are uploaded for inspection but are short-lived; cutting an actual release is
-# the release.yml workflow's job.
+# Triggers: builds for PRs only when they're ready for review (not on every
+# commit/draft push), on merges to main, and manually for any ref via
+# workflow_dispatch. Verification build: artifacts are short-lived (1 day).
 
-name: build
+name: Build ISO
 
 on:
   push:
     branches: [main]
   pull_request:
+    # Only ready-for-review PRs: `opened`/`reopened` cover a PR created or
+    # reopened already non-draft, `ready_for_review` covers a draft promoted to
+    # ready. Notably absent is `synchronize`, so pushing new commits to an open
+    # PR does NOT rebuild — the draft guard below also skips draft PRs.
+    types: [opened, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref/commit to build (defaults to the selected branch)"
+        required: false
+        type: string
 
-# Cancel superseded runs on the same ref (e.g. rapid PR pushes); a full ISO
-# build is expensive so don't waste runners on stale commits.
+# Cancel superseded runs on the same ref; a full ISO build is expensive so
+# don't waste runners on stale commits.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.ref }}-${{ github.event.inputs.ref }}
   cancel-in-progress: true
 
 jobs:
-  installer-iso:
-    name: installer/iso (${{ matrix.system }})
+  iso:
+    name: ${{ matrix.target }} (${{ matrix.system }})
+    # Skip draft PRs (opened/reopened fire for drafts too); always run for
+    # push and manual dispatch.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        target: [installer/iso, appliance/iso]
         include:
           - system: x86_64-linux
             runner: ubuntu-24.04
@@ -46,38 +61,50 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          # Empty for push/PR (checks out the event ref); honored for manual
+          # dispatch to build an arbitrary commit.
+          ref: ${{ github.event.inputs.ref }}
 
-      - name: Build installer ISO (in nixos/nix container)
+      - name: Build ISO (in nixos/nix container)
+        id: build
         env:
+          TARGET: ${{ matrix.target }}
           SYSTEM: ${{ matrix.system }}
         run: |
+          # Host temp dir, bind-mounted into the container, where the build
+          # drops the finished ISO (the container's /nix/store is ephemeral).
+          outdir="$(mktemp -d)"
+          echo "outdir=$outdir" >>"$GITHUB_OUTPUT"
+          # out/<target with / -> -> dir>/... e.g. installer/iso -> out/installer-iso
+          outlink="out/$(echo "$TARGET" | tr '/' '-')/iso"
+          # kind = installer | appliance (first path component of the target).
+          kind="${TARGET%%/*}"
           docker run --rm \
             -v "$PWD":/work -w /work \
-            -e SYSTEM \
+            -v "$outdir":/out \
+            -e TARGET -e SYSTEM \
             nixos/nix:latest \
-            sh -euc '
-              # The Makefile builds via `nix build --impure` and needs flakes +
+            sh -euc "
+              # The Makefile builds via 'nix build --impure' and needs flakes +
               # nix-command, which the nixos/nix image does not enable by default.
-              export NIX_CONFIG="experimental-features = nix-command flakes"
+              export NIX_CONFIG='experimental-features = nix-command flakes'
               # Repo is bind-mounted and owned by a different uid; allow git to
               # read it so the Makefile can stamp the build rev.
               git config --global --add safe.directory /work
-              # gnumake provides `make`; git lets the Makefile stamp the rev.
-              nix-shell -p gnumake git --run "make installer/iso"
-              # Copy the ISO out of the (ephemeral) container /nix/store into the
-              # mounted workspace so the host can upload it.
-              mkdir -p dist
-              cp -L "out/installer-iso/iso/coder-box-installer-$SYSTEM.iso" \
-                "dist/coder-box-installer-$SYSTEM.iso"
-            '
-          ls -lh dist/
+              # gnumake provides 'make'; git lets the Makefile stamp the rev.
+              nix-shell -p gnumake git --run \"make $TARGET\"
+              cp -L '$outlink/coder-box-$kind-$SYSTEM.iso' \
+                '/out/coder-box-$kind-$SYSTEM.iso'
+            "
+          ls -lh "$outdir"
 
       - name: Upload ISO artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: coder-box-installer-${{ matrix.system }}
-          path: dist/coder-box-installer-${{ matrix.system }}.iso
-          # Verification build; keep storage cost low.
-          retention-days: 7
+          name: coder-box-${{ matrix.target == 'installer/iso' && 'installer' || 'appliance' }}-${{ matrix.system }}
+          path: ${{ steps.build.outputs.outdir }}/*.iso
+          # Verification build; keep storage cost minimal.
+          retention-days: 1
           if-no-files-found: error
