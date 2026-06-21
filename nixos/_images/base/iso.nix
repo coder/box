@@ -37,5 +37,7 @@
   #   - gum: the interactive TUI (charmbracelet) install.sh drives for its
   #     --interactive prompts. install.sh hard-requires it (no fallback), so it
   #     must be present in the live environment.
-  environment.systemPackages = [ pkgs.dmidecode pkgs.gum ];
+  #   - openssl: install.sh uses `openssl rand` to generate the random default
+  #     hostname suffix (coder-box-<random>); it's in the preflight tool checks.
+  environment.systemPackages = [ pkgs.dmidecode pkgs.gum pkgs.openssl ];
 }
