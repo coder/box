@@ -9,15 +9,19 @@
 # directory`. So checkout/upload run on the host runner and only `make` runs in
 # the container.
 #
-# Bare `make <target>` resolves to the runner's native `builtins.currentSystem`
+# `make <kind>/iso` resolves to the runner's native `builtins.currentSystem`
 # (x86_64-linux or aarch64-linux) and produces
-# out/<target>/iso/coder-box-<kind>-<arch>-linux.iso inside the container. The
-# container /nix/store is ephemeral, so we copy the ISOs into a host mktemp dir
-# bind-mounted at /out and upload from there.
+# out/<kind>-iso/iso/coder-box-<kind>-<arch>-linux.iso (+ a .sha256 sidecar)
+# inside the container. The container /nix/store is ephemeral, so we dereference
+# the ISO into a host /dist volume and upload from there.
 #
-# Triggers: builds for PRs only when they're ready for review (not on every
-# commit/draft push), on merges to main, and manually for any ref via
-# workflow_dispatch. Verification build: artifacts are short-lived (1 day).
+# Triggers / what gets built:
+#   * push to main, workflow_dispatch  → always build the full ISO.
+#   * pull_request (ready, non-draft)  → build the full ISO for a kind ONLY when
+#       its label is applied (test-installer-iso / test-appliance-iso); without
+#       the label we just instantiate the .drv (cheap validation, no image).
+#       The `labeled` trigger means adding the label kicks off the full build.
+# Verification artifacts are short-lived (1 day).
 
 name: Build ISO
 
@@ -25,11 +29,11 @@ on:
   push:
     branches: [main]
   pull_request:
-    # Only ready-for-review PRs: `opened`/`reopened` cover a PR created or
-    # reopened already non-draft, `ready_for_review` covers a draft promoted to
-    # ready. Notably absent is `synchronize`, so pushing new commits to an open
-    # PR does NOT rebuild — the draft guard below also skips draft PRs.
-    types: [opened, reopened, ready_for_review]
+    # `opened`/`reopened` cover a PR created/reopened already non-draft,
+    # `ready_for_review` a draft promoted to ready, and `labeled` so applying a
+    # test-*-iso label starts the full build. Notably absent is `synchronize`,
+    # so pushing new commits does NOT rebuild (eval.yml covers per-commit drv).
+    types: [opened, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
       ref:
@@ -45,19 +49,34 @@ concurrency:
 
 jobs:
   iso:
-    name: ${{ matrix.target }} (${{ matrix.system }})
-    # Skip draft PRs (opened/reopened fire for drafts too); always run for
-    # push and manual dispatch.
+    name: ${{ matrix.kind }} (${{ matrix.system }})
+    # Skip draft PRs (opened/reopened/labeled fire for drafts too); always run
+    # for push and manual dispatch.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        target: [installer/iso, appliance/iso]
         include:
-          - system: x86_64-linux
+          - kind: Installer
+            target: installer
+            label: test-installer-iso
+            system: x86_64-linux
             runner: ubuntu-24.04
-          - system: aarch64-linux
+          - kind: Installer
+            target: installer
+            label: test-installer-iso
+            system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - kind: Appliance
+            target: appliance
+            label: test-appliance-iso
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          - kind: Appliance
+            target: appliance
+            label: test-appliance-iso
+            system: aarch64-linux
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
@@ -67,45 +86,70 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Build ISO (in nixos/nix container)
-        id: build
+      - name: Decide what to build
+        id: plan
         env:
+          # full = realise the ISO; otherwise just instantiate the .drv.
+          # Non-PR events always build the full ISO. PRs require the kind's
+          # label to be present.
+          FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, matrix.label) }}
           TARGET: ${{ matrix.target }}
         run: |
-          # Host /dist volume, bind-mounted into the container, where the build
-          # drops the finished ISO (the container's /nix/store is ephemeral, so
-          # the in-tree out/ symlink would dangle on the host — we dereference
-          # the built ISO into /dist instead).
+          # Bare targets resolve to the runner's native currentSystem (the
+          # matrix pins the matching native runner per arch).
+          if [ "$FULL" = "true" ]; then
+            echo "make=$TARGET/iso" >>"$GITHUB_OUTPUT"
+            echo "full=true" >>"$GITHUB_OUTPUT"
+            echo "Building full ISO: make $TARGET/iso"
+          else
+            echo "make=$TARGET/drv" >>"$GITHUB_OUTPUT"
+            echo "full=false" >>"$GITHUB_OUTPUT"
+            echo "No $TARGET label; instantiating derivation only: make $TARGET/drv"
+          fi
+
+      - name: Build (in nixos/nix container)
+        id: build
+        env:
+          MAKE_TARGET: ${{ steps.plan.outputs.make }}
+          FULL: ${{ steps.plan.outputs.full }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          # Host /dist volume, bind-mounted into the container, where a full
+          # build drops the finished ISO + checksum (the container's /nix/store
+          # is ephemeral, so the in-tree out/ symlink would dangle on the host).
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          # out/<target with / -> -> dir>/... e.g. installer/iso -> out/installer-iso
-          outlink="out/$(echo "$TARGET" | tr '/' '-')/iso"
+          outlink="out/$TARGET-iso/iso"
           docker run --rm \
             -v "$PWD":/work -w /work \
             -v "$dist":/dist \
-            -e TARGET \
+            -e MAKE_TARGET -e FULL -e outlink="$outlink" \
             nixos/nix:latest \
-            sh -euc "
-              # The Makefile builds via 'nix build --impure' and needs flakes +
+            sh -euc '
+              # The Makefile builds via "nix build --impure" and needs flakes +
               # nix-command, which the nixos/nix image does not enable by default.
-              export NIX_CONFIG='experimental-features = nix-command flakes'
+              export NIX_CONFIG="experimental-features = nix-command flakes"
               # Repo is bind-mounted and owned by a different uid; allow git to
               # read it so the Makefile can stamp the build rev.
               git config --global --add safe.directory /work
-              # gnumake provides 'make'; git lets the Makefile stamp the rev. The
+              # gnumake provides "make"; git lets the Makefile stamp the rev. The
               # ISO targets also emit out/<name>.iso.sha256 sidecar checksums.
-              nix-shell -p gnumake git --run \"make $TARGET\"
-              # Dereference the build's store symlink into the /dist volume,
-              # alongside the make-generated checksum sidecar.
-              cp -L $outlink/*.iso /dist/
-              cp out/*.iso.sha256 /dist/
-            "
+              nix-shell -p gnumake git --run "make $MAKE_TARGET"
+              # Only a full build produces an image; dereference it (+ checksum
+              # sidecar) into the /dist volume for upload.
+              if [ "$FULL" = "true" ]; then
+                cp -L "$outlink"/*.iso /dist/
+                cp out/*.iso.sha256 /dist/
+              fi
+            '
           ls -lh "$dist"
 
       - name: Upload ISO artifact
+        # drv-only runs produce no image, so nothing to upload.
+        if: steps.plan.outputs.full == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: coder-box-${{ matrix.target == 'installer/iso' && 'installer' || 'appliance' }}-${{ matrix.system }}
+          name: coder-box-${{ matrix.target }}-${{ matrix.system }}
           path: ${{ steps.build.outputs.dist }}/*.iso*
           # Verification build; keep storage cost minimal.
           retention-days: 1
