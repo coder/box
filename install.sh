@@ -446,13 +446,6 @@ printf "  Hostname:             %s%s\n" "$HOSTNAME_ARG" \
   "$( [[ $HOSTNAME_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
 printf "  Hardware:             %s\n" "$HARDWARE_DESC_ARG"
 printf "  Disk (will wipe):     %s\n" "$DISK_ARG"
-printf "  Coder admin email:    %s%s\n" "$ADMIN_EMAIL_ARG" \
-  "$( [[ $EMAIL_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
-if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
-else
-  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
 printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 printf "  NixOS login user:     %s%s\n" "$NIXOS_USERNAME_ARG" \
   "$( [[ $NIXOS_USERNAME_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
@@ -460,6 +453,13 @@ if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   printf "  NixOS login password: %s  (default)\n" "$NIXOS_PASSWORD_ARG"
 else
   printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
+fi
+printf "  Coder admin email:    %s%s\n" "$ADMIN_EMAIL_ARG" \
+  "$( [[ $EMAIL_IS_DEFAULT -eq 1 ]] && echo '  (default)' )"
+if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
+  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
+else
+  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
 if [[ $HOSTNAME_IS_DEFAULT -eq 1 || $EMAIL_IS_DEFAULT -eq 1 || $PASSWORD_IS_DEFAULT -eq 1 \
    || $NIXOS_USERNAME_IS_DEFAULT -eq 1 || $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
@@ -649,18 +649,18 @@ echo
 echo "Installed:"
 printf "  Hostname:             %s\n" "$HOSTNAME_ARG"
 printf "  Disk:                 %s\n" "$DISK_ARG"
-printf "  Coder admin email:    %s\n" "$ADMIN_EMAIL_ARG"
-if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
-  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
-else
-  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
-fi
 printf "  LAN IP:               %s\n" "${LAN_IP_ARG:-(none detected)}"
 printf "  NixOS login user:     %s\n" "$NIXOS_USERNAME_ARG"
 if [[ $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   printf "  NixOS login password: %s  (default)\n" "$NIXOS_PASSWORD_ARG"
 else
   printf "  NixOS login password: %s\n" "$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
+fi
+printf "  Coder admin email:    %s\n" "$ADMIN_EMAIL_ARG"
+if [[ $PASSWORD_IS_DEFAULT -eq 1 ]]; then
+  printf "  Coder admin password: %s  (default)\n" "$ADMIN_PASSWORD_ARG"
+else
+  printf "  Coder admin password: %s\n" "$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
 fi
 echo
 echo "Coder web UI after reboot:"
