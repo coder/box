@@ -71,9 +71,7 @@
     # so there is no separate import/mount unit ordering to worry about.
     zpool.rpool = {
       type = "zpool";
-      mode = "";
-      # ashift=12 → 4 KiB sectors, correct for every modern SSD/NVMe/HDD.
-      options.ashift = "12";
+
       rootFsOptions = {
         # zstd: good ratio, negligible CPU cost; helps the Nix store especially.
         compression = "zstd";
@@ -84,12 +82,14 @@
         # The pool itself isn't a mountpoint; datasets carry the mounts.
         mountpoint = "none";
       };
+
       datasets = {
         # Root filesystem.
         root = {
           type = "zfs_fs";
           mountpoint = "/";
         };
+
         # The Nix store is fully reproducible from the flake and churns
         # constantly; atime off avoids needless write amplification.
         nix = {
