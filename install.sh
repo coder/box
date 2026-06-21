@@ -27,6 +27,8 @@
 #   --no-reboot                      skip the final reboot
 #   --interactive, -i                prompt for any value not passed as a flag
 #                                    (ignored when --yes is given)
+#   --unsafe-assume-disk             when no --disk is given (non-interactive),
+#                                    auto-pick the first detected disk and WIPE it
 #   --yes, -y                        skip the destructive-wipe confirmation
 #   --help, -h                       show this help
 
@@ -70,6 +72,7 @@ LAN_IP_ARG=""
 NO_REBOOT=0
 ASSUME_YES=0
 INTERACTIVE=0
+UNSAFE_ASSUME_DISK=0
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed 's/^# \?//; s/^set -euo.*//' | sed '/^$/N;/^\n$/D'; }
 
@@ -85,7 +88,7 @@ need_value() {
 SHORT_OPTS="iyh"
 LONG_OPTS="hostname:,hardware-desc:,disk:,coder-admin-email:,coder-admin-password:"
 LONG_OPTS+=",coder-admin-password-file:,nixos-username:,nixos-password:,nixos-password-file:"
-LONG_OPTS+=",lan-ip:,no-reboot,interactive,yes,help"
+LONG_OPTS+=",lan-ip:,no-reboot,interactive,unsafe-assume-disk,yes,help"
 
 # We rely on GNU getopt to normalise `--flag=value`, bundled short flags, and
 # option order into a canonical token stream terminated by `--`. BSD/macOS
@@ -119,6 +122,7 @@ while [[ $# -gt 0 ]]; do
     --lan-ip)                need_value "$@"; LAN_IP_ARG="$2";                shift 2 ;;
     --no-reboot)             NO_REBOOT=1;                    shift ;;
     --interactive|-i)        INTERACTIVE=1;                  shift ;;
+    --unsafe-assume-disk)    UNSAFE_ASSUME_DISK=1;           shift ;;
     --yes|-y)                ASSUME_YES=1;                   shift ;;
     --help|-h)               usage; exit 0 ;;
     --) shift; break ;;
@@ -385,14 +389,28 @@ validate_hostname "$HOSTNAME_ARG"
 # the default (and the interactive prompt's prefill); --hardware-desc overrides.
 resolve_value HARDWARE_DESC_ARG "Hardware description" "$(detect_hardware_desc)"
 
-# Disk has no safe default. Non-interactive runs must pass --disk; interactive
-# runs get the numbered picker below.
+# Disk has no safe default. Non-interactive runs must pass --disk (or opt into
+# --unsafe-assume-disk to auto-pick the first detected disk); interactive runs
+# get the picker below.
 if [[ -z "$DISK_ARG" ]]; then
   if [[ $INTERACTIVE -ne 1 ]]; then
-    echo "no target disk: pass --disk PATH, or re-run with --interactive to pick one" >&2
-    echo "  (use lsblk to inspect available disks)" >&2
-    exit 1
+    if [[ $UNSAFE_ASSUME_DISK -eq 1 ]]; then
+      # Caller explicitly accepted the risk: assume the first auto-detected disk
+      # without confirmation. This WILL be wiped, so it's gated behind the
+      # scary-named flag.
+      mapfile -t DISKS < <(list_disks)
+      [[ ${#DISKS[@]} -gt 0 ]] || { echo "--unsafe-assume-disk: no eligible disk detected" >&2; exit 1; }
+      DISK_ARG=$(awk '{print $1}' <<<"${DISKS[0]}")
+      echo "--unsafe-assume-disk: assuming $DISK_ARG" >&2
+    else
+      echo "no target disk: pass --disk PATH, or re-run with --interactive to pick one" >&2
+      echo "  (or --unsafe-assume-disk to auto-pick the first detected disk)" >&2
+      echo "  (use lsblk to inspect available disks)" >&2
+      exit 1
+    fi
   fi
+fi
+if [[ -z "$DISK_ARG" && $INTERACTIVE -eq 1 ]]; then
   echo
   mapfile -t DISKS < <(list_disks)
   # Always offer "Other …" so a user can type a path the auto-detection missed
