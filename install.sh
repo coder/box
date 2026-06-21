@@ -278,6 +278,55 @@ prompt_secret() {
   printf '%s' "${reply:-$default}"
 }
 
+# Resolve a single input variable in place, centralising the "flag wins, else
+# prompt (interactive) or default (unattended)" logic so each input is one call
+# instead of a repeated if/else block.
+#
+#   resolve_value VARNAME LABEL DEFAULT [--secret] [--validate FN] [--default-flag FLAGVAR]
+#
+#   - VARNAME already set (passed as a flag) → keep it untouched.
+#   - else interactive            → prompt (re-prompting until --validate FN passes).
+#   - else unattended             → use DEFAULT.
+#   - --secret                    → hidden (password) prompt; empty keeps DEFAULT.
+#   - --default-flag FLAGVAR      → set FLAGVAR=1 when the resolved value equals
+#                                   DEFAULT, so the summary can mark it.
+#
+# Validation of flag-passed values stays at the call site (so an invalid flag
+# value errors out the same as before).
+resolve_value() {
+  local -n _rv_var="$1"
+  local label="$2" default="$3"; shift 3
+  local secret=0 validate="" flagname=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --secret)       secret=1;        shift ;;
+      --validate)     validate="$2";   shift 2 ;;
+      --default-flag) flagname="$2";   shift 2 ;;
+      *) echo "resolve_value: unknown option $1" >&2; exit 2 ;;
+    esac
+  done
+
+  if [[ -z "$_rv_var" ]]; then
+    if [[ $INTERACTIVE -eq 1 ]]; then
+      while :; do
+        if [[ $secret -eq 1 ]]; then
+          _rv_var="$(prompt_secret "$label" "$default")"
+        else
+          _rv_var="$(prompt_value "$label" "$default")"
+        fi
+        [[ -z "$validate" ]] && break
+        "$validate" "$_rv_var" && break
+      done
+    else
+      _rv_var="$default"
+    fi
+    if [[ -n "$flagname" && "$_rv_var" == "$default" ]]; then
+      local -n _rv_flag="$flagname"
+      _rv_flag=1
+    fi
+  fi
+}
+
 # ── Gather inputs ──────────────────────────────────────────────────────────
 # Resolve the build/commit revision for display: prefer git (the normal
 # live-USB clone, or a fork checkout), else the baked /etc/coder-box-rev that
@@ -314,30 +363,16 @@ PASSWORD_IS_DEFAULT=0
 NIXOS_USERNAME_IS_DEFAULT=0
 NIXOS_PASSWORD_IS_DEFAULT=0
 
-# Each value falls back to its default unless passed as a flag. In interactive
-# mode we instead prompt (still defaulting on empty input) for any value the
-# user didn't pass on the command line.
-if [[ -z "$HOSTNAME_ARG" ]]; then
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    while :; do
-      HOSTNAME_ARG="$(prompt_value "Hostname" "$DEFAULT_HOSTNAME")"
-      validate_hostname "$HOSTNAME_ARG" && break
-    done
-  else
-    HOSTNAME_ARG="$DEFAULT_HOSTNAME"
-  fi
-  [[ "$HOSTNAME_ARG" == "$DEFAULT_HOSTNAME" ]] && HOSTNAME_IS_DEFAULT=1
-fi
+# Each value falls back to its default unless passed as a flag; in interactive
+# mode we prompt instead (see resolve_value). Validation of flag-passed values
+# still runs unconditionally after each call.
+resolve_value HOSTNAME_ARG "Hostname" "$DEFAULT_HOSTNAME" \
+  --validate validate_hostname --default-flag HOSTNAME_IS_DEFAULT
 validate_hostname "$HOSTNAME_ARG"
 
-# Hardware description is a free-text comment header. Auto-detected if not
-# given via --hardware-desc; interactive lets the user override the guess.
-if [[ -z "$HARDWARE_DESC_ARG" ]]; then
-  HARDWARE_DESC_ARG="$(detect_hardware_desc)"
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    HARDWARE_DESC_ARG="$(prompt_value "Hardware description" "$HARDWARE_DESC_ARG")"
-  fi
-fi
+# Hardware description is a free-text comment header. The auto-detected value is
+# the default (and the interactive prompt's prefill); --hardware-desc overrides.
+resolve_value HARDWARE_DESC_ARG "Hardware description" "$(detect_hardware_desc)"
 
 # Disk has no safe default. Non-interactive runs must pass --disk; interactive
 # runs get the numbered picker below.
@@ -362,51 +397,22 @@ if [[ -z "$DISK_ARG" ]]; then
 fi
 [[ -b "$DISK_ARG" ]] || { echo "not a block device: $DISK_ARG" >&2; exit 1; }
 
-if [[ -z "$ADMIN_EMAIL_ARG" ]]; then
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    ADMIN_EMAIL_ARG="$(prompt_value "Coder admin email" "$DEFAULT_ADMIN_EMAIL")"
-  else
-    ADMIN_EMAIL_ARG="$DEFAULT_ADMIN_EMAIL"
-  fi
-  [[ "$ADMIN_EMAIL_ARG" == "$DEFAULT_ADMIN_EMAIL" ]] && EMAIL_IS_DEFAULT=1
-fi
-if [[ -z "$ADMIN_PASSWORD_ARG" ]]; then
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    ADMIN_PASSWORD_ARG="$(prompt_secret "Coder admin password" "$DEFAULT_ADMIN_PASSWORD")"
-  else
-    ADMIN_PASSWORD_ARG="$DEFAULT_ADMIN_PASSWORD"
-  fi
-  [[ "$ADMIN_PASSWORD_ARG" == "$DEFAULT_ADMIN_PASSWORD" ]] && PASSWORD_IS_DEFAULT=1
-fi
+resolve_value ADMIN_EMAIL_ARG "Coder admin email" "$DEFAULT_ADMIN_EMAIL" \
+  --default-flag EMAIL_IS_DEFAULT
+resolve_value ADMIN_PASSWORD_ARG "Coder admin password" "$DEFAULT_ADMIN_PASSWORD" \
+  --secret --default-flag PASSWORD_IS_DEFAULT
 
-if [[ -z "$NIXOS_USERNAME_ARG" ]]; then
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    while :; do
-      NIXOS_USERNAME_ARG="$(prompt_value "NixOS login user" "$DEFAULT_NIXOS_USERNAME")"
-      validate_username "$NIXOS_USERNAME_ARG" && break
-    done
-  else
-    NIXOS_USERNAME_ARG="$DEFAULT_NIXOS_USERNAME"
-  fi
-  [[ "$NIXOS_USERNAME_ARG" == "$DEFAULT_NIXOS_USERNAME" ]] && NIXOS_USERNAME_IS_DEFAULT=1
-fi
+resolve_value NIXOS_USERNAME_ARG "NixOS login user" "$DEFAULT_NIXOS_USERNAME" \
+  --validate validate_username --default-flag NIXOS_USERNAME_IS_DEFAULT
 validate_username "$NIXOS_USERNAME_ARG"
-if [[ -z "$NIXOS_PASSWORD_ARG" ]]; then
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    NIXOS_PASSWORD_ARG="$(prompt_secret "NixOS login password" "$DEFAULT_NIXOS_PASSWORD")"
-  else
-    NIXOS_PASSWORD_ARG="$DEFAULT_NIXOS_PASSWORD"
-  fi
-  [[ "$NIXOS_PASSWORD_ARG" == "$DEFAULT_NIXOS_PASSWORD" ]] && NIXOS_PASSWORD_IS_DEFAULT=1
-fi
+resolve_value NIXOS_PASSWORD_ARG "NixOS login password" "$DEFAULT_NIXOS_PASSWORD" \
+  --secret --default-flag NIXOS_PASSWORD_IS_DEFAULT
 
-if [[ -z "$LAN_IP_ARG" ]]; then
-  LAN_IP_ARG=$(detect_lan_ip || true)
-  if [[ $INTERACTIVE -eq 1 ]]; then
-    LAN_IP_ARG="$(prompt_value "LAN IP" "${LAN_IP_ARG:-none}")"
-    [[ "$LAN_IP_ARG" == "none" ]] && LAN_IP_ARG=""
-  fi
-fi
+# LAN IP: the auto-detected value is the default ("none" when nothing detected,
+# which we map back to empty so downstream treats it as "no IP detected").
+LAN_IP_DEFAULT="$(detect_lan_ip || true)"
+resolve_value LAN_IP_ARG "LAN IP" "${LAN_IP_DEFAULT:-none}"
+[[ "$LAN_IP_ARG" == "none" ]] && LAN_IP_ARG=""
 
 # Existing host folder?
 HOST_DIR="$REPO_DIR/hosts/$HOSTNAME_ARG"
