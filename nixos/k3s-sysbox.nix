@@ -229,7 +229,9 @@ in
       (pkgs.writeShellScript "k3s-wait-api-ready" ''
         echo "k3s-wait-api-ready: waiting for API server /readyz..."
         for i in $(seq 1 120); do
-          if ${pkgs.curl}/bin/curl -sf -o /dev/null               --cacert /var/lib/rancher/k3s/server/tls/server-ca.crt               https://127.0.0.1:6443/readyz 2>/dev/null; then
+          if ${pkgs.curl}/bin/curl -sf -o /dev/null \
+              --cacert /var/lib/rancher/k3s/server/tls/server-ca.crt \
+              https://127.0.0.1:6443/readyz 2>/dev/null; then
             echo "k3s-wait-api-ready: API ready after ''${i}s"
             exit 0
           fi
@@ -371,7 +373,9 @@ in
     users.groups.coder = lib.mkDefault {};
 
     # ── Additional packages ───────────────────────────────────────────────
-    environment.systemPackages = with pkgs; [ kubectl kubernetes-helm fuse fuse3 ];
+    # rsync is required by sysbox-mgr preflight check; without it,
+    # sysbox-mgr exits immediately and pods stay stuck in ContainerCreating.
+    environment.systemPackages = with pkgs; [ kubectl kubernetes-helm fuse fuse3 rsync ];
 
     # ── FUSE: allow non-root mounts (needed by sysbox-fs) ─────────────────
     programs.fuse.userAllowOther = true;

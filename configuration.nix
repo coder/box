@@ -434,7 +434,7 @@ in
 
           if [ -z "''${CODER_ADMIN_EMAIL:-}" ]; then
             echo "CODER_ADMIN_EMAIL not set, skipping bootstrap."
-            echo "Complete the first-run wizard at http://$(hostname -s).local:3000"
+            echo "Complete the first-run wizard at http://$(${pkgs.nettools}/bin/hostname -s).local:3000"
             exit 0
           fi
 
@@ -599,8 +599,13 @@ in
 
           # 8. Mint a fresh long-lived session token using the admin creds from local.nix
           echo "--- minting session token"
-          SESSION=$(${pkgs.curl}/bin/curl -sf             -X POST http://localhost:3000/api/v2/users/login             -H 'Content-Type: application/json'             -d "{"email":"''${CODER_ADMIN_EMAIL}","password":"''${CODER_ADMIN_PASSWORD}"}"             | ${pkgs.jq}/bin/jq -r '.session_token')
-          LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION"             ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
+          SESSION=$(${pkgs.curl}/bin/curl -sf \
+            -X POST http://localhost:3000/api/v2/users/login \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"''${CODER_ADMIN_EMAIL}\",\"password\":\"''${CODER_ADMIN_PASSWORD}\"}" \
+            | ${pkgs.jq}/bin/jq -r '.session_token')
+          LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION" \
+            ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
           echo "$LONG_TOKEN" | ${pkgs.coreutils}/bin/tee /etc/coder/session-token > /dev/null
           echo "--- session token written"
 
@@ -638,6 +643,7 @@ in
           echo "  This file is auto-populated by coder-init-admin.service on first boot."
         else
           mkdir -p "$STATE_DIR"
+          chown coder:coder "$STATE_DIR" 2>/dev/null || true
 
           COMMIT=$(GIT_DIR=/etc/nixos-repo/.git ${pkgs.git}/bin/git -c safe.directory=/etc/nixos-repo -C /etc/nixos-repo rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -772,7 +778,10 @@ EOF
 
           echo "coder-workspace-reaper: checking for workspaces stopped before $(${pkgs.coreutils}/bin/date -d @$CUTOFF --iso-8601=seconds)"
 
-          WORKSPACES=$(${pkgs.curl}/bin/curl -sf             -H "Coder-Session-Token: $TOKEN"             "$CODER_LOCAL/api/v2/workspaces?limit=100&filterQuery=status:stopped"             | ${pkgs.jq}/bin/jq -r '.workspaces[] | .id + " " + .name + " " + .last_used_at')
+          WORKSPACES=$(${pkgs.curl}/bin/curl -sf \
+            -H "Coder-Session-Token: $TOKEN" \
+            "$CODER_LOCAL/api/v2/workspaces?limit=100&filterQuery=status:stopped" \
+            | ${pkgs.jq}/bin/jq -r '.workspaces[] | .id + " " + .name + " " + .last_used_at')
 
           if [ -z "$WORKSPACES" ]; then
             echo "coder-workspace-reaper: no stopped workspaces found"
@@ -784,7 +793,10 @@ EOF
             LAST_EPOCH=$(${pkgs.coreutils}/bin/date -d "$last_used" +%s 2>/dev/null || echo 0)
             if [ "$LAST_EPOCH" -lt "$CUTOFF" ]; then
               echo "coder-workspace-reaper: deleting $name ($id) — last used $last_used"
-              ${pkgs.curl}/bin/curl -sf -X DELETE                 -H "Coder-Session-Token: $TOKEN"                 "$CODER_LOCAL/api/v2/workspaces/$id" ||                 echo "coder-workspace-reaper: WARNING — delete failed for $name"
+              ${pkgs.curl}/bin/curl -sf -X DELETE \
+                -H "Coder-Session-Token: $TOKEN" \
+                "$CODER_LOCAL/api/v2/workspaces/$id" || \
+                echo "coder-workspace-reaper: WARNING — delete failed for $name"
             else
               echo "coder-workspace-reaper: keeping $name — stopped recently"
             fi

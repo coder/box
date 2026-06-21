@@ -44,7 +44,7 @@ locals {
   ws_name   = lower(data.coder_workspace.me.name)
   prefix    = "coder-${data.coder_workspace.me.id}"
   pod_name  = "${local.prefix}-pod"
-  kubectl   = "/nix/store/5bx4yn3kq9rgyaianxxldnr2ffr2k5fr-k3s-1.34.5+k3s1/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
+  kubectl   = "/run/current-system/sw/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml"
 }
 
 # ── Parameters ────────────────────────────────────────────────────────────
@@ -385,8 +385,10 @@ resource "terraform_data" "workspace" {
           hostUsers        = false
           restartPolicy    = "OnFailure"
           hostname         = "${local.owner}-${local.ws_name}"
-          hostAliases = [{
-          }]
+          hostAliases = length(var.coder_lan_ip) > 0 ? [{
+            ip        = var.coder_lan_ip
+            hostnames = [var.coder_hostname]
+          }] : []
           containers = [{
             name             = "workspace"
             image            = data.coder_parameter.image.value
