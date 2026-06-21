@@ -71,20 +71,19 @@ jobs:
         id: build
         env:
           TARGET: ${{ matrix.target }}
-          SYSTEM: ${{ matrix.system }}
         run: |
-          # Host temp dir, bind-mounted into the container, where the build
-          # drops the finished ISO (the container's /nix/store is ephemeral).
-          outdir="$(mktemp -d)"
-          echo "outdir=$outdir" >>"$GITHUB_OUTPUT"
+          # Host /dist volume, bind-mounted into the container, where the build
+          # drops the finished ISO (the container's /nix/store is ephemeral, so
+          # the in-tree out/ symlink would dangle on the host — we dereference
+          # the built ISO into /dist instead).
+          dist="$(mktemp -d)"
+          echo "dist=$dist" >>"$GITHUB_OUTPUT"
           # out/<target with / -> -> dir>/... e.g. installer/iso -> out/installer-iso
           outlink="out/$(echo "$TARGET" | tr '/' '-')/iso"
-          # kind = installer | appliance (first path component of the target).
-          kind="${TARGET%%/*}"
           docker run --rm \
             -v "$PWD":/work -w /work \
-            -v "$outdir":/out \
-            -e TARGET -e SYSTEM \
+            -v "$dist":/dist \
+            -e TARGET \
             nixos/nix:latest \
             sh -euc "
               # The Makefile builds via 'nix build --impure' and needs flakes +
@@ -95,16 +94,16 @@ jobs:
               git config --global --add safe.directory /work
               # gnumake provides 'make'; git lets the Makefile stamp the rev.
               nix-shell -p gnumake git --run \"make $TARGET\"
-              cp -L '$outlink/coder-box-$kind-$SYSTEM.iso' \
-                '/out/coder-box-$kind-$SYSTEM.iso'
+              # Dereference the build's store symlink into the /dist volume.
+              cp -L $outlink/*.iso /dist/
             "
-          ls -lh "$outdir"
+          ls -lh "$dist"
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-${{ matrix.target == 'installer/iso' && 'installer' || 'appliance' }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.outdir }}/*.iso
+          path: ${{ steps.build.outputs.dist }}/*.iso
           # Verification build; keep storage cost minimal.
           retention-days: 1
           if-no-files-found: error
