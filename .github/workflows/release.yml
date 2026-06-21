@@ -5,10 +5,14 @@
 #   * push a tag matching v*  (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
 #   * run manually from the Actions tab (workflow_dispatch) and supply a tag.
 #
-# Each arch builds on a native runner inside the `nixos/nix` container, so
-# `make installer/iso` resolves to the runner's native `builtins.currentSystem`
-# and produces out/installer-iso/iso/coder-box-installer-<arch>-linux.iso. The
-# release job then gathers both ISOs and attaches them to the release.
+# Like build.yml, each arch builds natively and the build runs inside the
+# `nixos/nix` container via `docker run` (the whole job can't use `container:`
+# because that image lacks a glibc loader for GitHub's bundled Node, which
+# breaks every JS action). Bare `make installer/iso` resolves to the runner's
+# native currentSystem and produces
+# out/installer-iso/iso/coder-box-installer-<arch>-linux.iso, which we copy out
+# of the ephemeral container store into the mounted workspace. The release job
+# then gathers both ISOs and attaches them to the release.
 
 name: release
 
@@ -36,8 +40,6 @@ jobs:
   build:
     name: installer/iso (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
-    container:
-      image: nixos/nix:latest
     strategy:
       fail-fast: true
       matrix:
@@ -46,31 +48,31 @@ jobs:
             runner: ubuntu-24.04
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
-    env:
-      NIX_CONFIG: |
-        experimental-features = nix-command flakes
-        accept-flake-config = true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build installer ISO
-        # gnumake provides `make`; git lets the Makefile stamp the build rev.
-        run: nix-shell -p gnumake git --run "make installer/iso"
-
-      - name: Stage ISO for upload
+      - name: Build installer ISO (in nixos/nix container)
+        env:
+          SYSTEM: ${{ matrix.system }}
         run: |
-          mkdir -p dist
-          src="out/installer-iso/iso/coder-box-installer-${{ matrix.system }}.iso"
-          if [ ! -f "$src" ]; then
-            echo "Expected ISO not found at $src" >&2
-            ls -lR out/ >&2 || true
-            exit 1
-          fi
-          cp -L "$src" "dist/coder-box-installer-${{ matrix.system }}.iso"
-          # Checksum so release consumers can verify the download.
-          (cd dist && sha256sum "coder-box-installer-${{ matrix.system }}.iso" \
-            >"coder-box-installer-${{ matrix.system }}.iso.sha256")
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            -e SYSTEM \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              # gnumake provides `make`; git lets the Makefile stamp the rev.
+              nix-shell -p gnumake git --run "make installer/iso"
+              # Copy the ISO out of the (ephemeral) container /nix/store and
+              # checksum it so release consumers can verify the download.
+              mkdir -p dist
+              cp -L "out/installer-iso/iso/coder-box-installer-$SYSTEM.iso" \
+                "dist/coder-box-installer-$SYSTEM.iso"
+              cd dist && sha256sum "coder-box-installer-$SYSTEM.iso" \
+                >"coder-box-installer-$SYSTEM.iso.sha256"
+            '
           ls -lh dist/
 
       - name: Upload build artifact
