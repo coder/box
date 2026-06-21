@@ -399,10 +399,20 @@ if [[ -z "$DISK_ARG" ]]; then
   # (unusual controllers, /dev/mapper, etc.); it's the only choice when no
   # eligible disks were found.
   OTHER_LABEL="Other (enter a disk path manually)"
-  sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
-    | gum choose --header "Install to which disk? (it WILL be wiped)")" \
-    || { echo "no disk selected" >&2; exit 1; }
-  [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
+  SEP_LABEL="──────────"
+  # Build the choice list: detected disks, a separator (only when there are
+  # disks to separate from), then "Other".
+  CHOICES=("${DISKS[@]}")
+  [[ ${#DISKS[@]} -gt 0 ]] && CHOICES+=("$SEP_LABEL")
+  CHOICES+=("$OTHER_LABEL")
+  while :; do
+    sel="$(printf '%s\n' "${CHOICES[@]}" \
+      | gum choose --header "Install to which disk? (it WILL be wiped)")" \
+      || { echo "no disk selected" >&2; exit 1; }
+    [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
+    # The separator is decorative; re-prompt if it's picked.
+    [[ "$sel" == "$SEP_LABEL" ]] || break
+  done
   if [[ "$sel" == "$OTHER_LABEL" ]]; then
     DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
       || { echo "no disk entered" >&2; exit 1; }
