@@ -412,7 +412,13 @@ if [[ -z "$DISK_ARG" ]]; then
     || { echo "no disk selected" >&2; exit 1; }
   [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
   if [[ "$sel" == "$OTHER_LABEL" ]]; then
-    DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
+    # Prefill with the main guessed disk (first detected) so the user can edit a
+    # near-correct path instead of typing from scratch; fall back to a hint when
+    # nothing was detected.
+    guessed_disk=""
+    [[ ${#DISKS[@]} -gt 0 ]] && guessed_disk="$(awk '{print $1}' <<<"${DISKS[0]}")"
+    DISK_ARG="$(gum input --prompt "Disk path: " \
+      --value "$guessed_disk" --placeholder "/dev/sda")" \
       || { echo "no disk entered" >&2; exit 1; }
   else
     DISK_ARG=$(awk '{print $1}' <<<"$sel")
