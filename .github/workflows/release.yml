@@ -1,0 +1,125 @@
+# Release — builds the installer ISO for every supported architecture and
+# publishes them as assets on a GitHub Release.
+#
+# Trigger either way:
+#   * push a tag matching v*  (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
+#   * run manually from the Actions tab (workflow_dispatch) and supply a tag.
+#
+# The build job is the same native per-arch `make installer/iso/<arch>` matrix
+# as build.yml; the release job then gathers both ISOs and attaches them to the
+# release for the chosen tag.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/publish (e.g. v1.2.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the release as a pre-release"
+        required: false
+        default: false
+        type: boolean
+
+# Only one release run per tag at a time.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: installer/iso (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64-linux
+            runner: ubuntu-24.04
+          - arch: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build installer ISO
+        run: make installer/iso/${{ matrix.arch }}
+
+      - name: Stage ISO for upload
+        id: iso
+        run: |
+          mkdir -p dist
+          src=$(readlink -f "out/installer-iso-${{ matrix.arch }}/iso")/coder-box-installer-${{ matrix.arch }}.iso
+          if [ ! -f "$src" ]; then
+            echo "Expected ISO not found at $src" >&2
+            ls -lR out/ >&2 || true
+            exit 1
+          fi
+          cp "$src" "dist/coder-box-installer-${{ matrix.arch }}.iso"
+          # Checksum so release consumers can verify the download.
+          (cd dist && sha256sum "coder-box-installer-${{ matrix.arch }}.iso" \
+            >"coder-box-installer-${{ matrix.arch }}.iso.sha256")
+          ls -lh dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coder-box-installer-${{ matrix.arch }}
+          path: dist/coder-box-installer-${{ matrix.arch }}.iso*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "Releasing tag: $tag"
+
+      - name: Download built ISOs
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lhR dist/
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          files: |
+            dist/coder-box-installer-x86_64-linux.iso
+            dist/coder-box-installer-x86_64-linux.iso.sha256
+            dist/coder-box-installer-aarch64-linux.iso
+            dist/coder-box-installer-aarch64-linux.iso.sha256
+          fail_on_unmatched_files: true

@@ -1,0 +1,76 @@
+# Build CI — builds the installer ISO for every supported architecture.
+#
+# Runs `make installer/iso/<arch>` for each arch on a native runner (no QEMU
+# emulation: a full ISO build under binfmt is painfully slow). The Makefile
+# resolves `make installer/iso/x86_64-linux` etc. and drops a GC-root symlink
+# under ./out/installer-iso-<arch>/iso/coder-box-installer-<arch>.iso.
+#
+# This is a verification build: it proves both ISOs still build. The artifacts
+# are uploaded for inspection but are short-lived; cutting an actual release is
+# the release.yml workflow's job.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (e.g. rapid PR pushes); a full ISO
+# build is expensive so don't waste runners on stale commits.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-iso:
+    name: installer/iso (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64-linux
+            runner: ubuntu-24.04
+          - arch: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+        with:
+          # The Makefile builds via `nix build --impure ... ${builtins.currentSystem}`
+          # and needs flakes + nix-command enabled.
+          extra-conf: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build installer ISO
+        run: make installer/iso/${{ matrix.arch }}
+
+      - name: Resolve ISO path
+        id: iso
+        run: |
+          iso=$(readlink -f "out/installer-iso-${{ matrix.arch }}/iso")/coder-box-installer-${{ matrix.arch }}.iso
+          if [ ! -f "$iso" ]; then
+            echo "Expected ISO not found at $iso" >&2
+            ls -lR out/ >&2 || true
+            exit 1
+          fi
+          echo "path=$iso" >>"$GITHUB_OUTPUT"
+          ls -lh "$iso"
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coder-box-installer-${{ matrix.arch }}
+          path: ${{ steps.iso.outputs.path }}
+          # Verification build; keep storage cost low.
+          retention-days: 7
+          if-no-files-found: error
