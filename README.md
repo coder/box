@@ -34,7 +34,7 @@ local.nix.example          # template copied to hosts/<host>/local.nix by instal
 .gitignore                 # ignores hosts/*/local.nix
 install.sh                 # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
 nixos/
-  disko-standard.nix       # shared disko config: 1 GB EFI + 16 GB swap + ext4 root on a single disk
+  disko-standard.nix       # shared disko config: 1 GB EFI + ZFS root pool on a single disk
   tailscale.nix            # Tailscale module (auth key, no --ssh flag)
   k3s-sysbox.nix           # k3s + sysbox-runc runtime class
   k3s-podman.nix           # k3s + rootless Podman socket
@@ -88,7 +88,7 @@ default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 
 Two community tools do the heavy lifting:
 
-- [`disko`](https://github.com/nix-community/disko) declares partition layouts in Nix. `nixos/disko-standard.nix` is a single-disk UEFI layout (1 GB EFI / 16 GB swap / ext4 root). `install.sh` picks the device at install time.
+- [`disko`](https://github.com/nix-community/disko) declares partition layouts in Nix. `nixos/disko-standard.nix` is a single-disk UEFI layout (1 GB EFI / ZFS root pool; no on-disk swap — zram instead). `install.sh` picks the device at install time; the ZFS `networking.hostId` is derived in Nix from the hostname (sha256 substring), so each host gets a distinct id automatically. ZFS gives cheap on-demand snapshots (take one before a risky rebuild and roll back in seconds), zstd compression, and checksum/scrub integrity.
 - [`nixos-facter`](https://github.com/nix-community/nixos-facter) writes a JSON hardware report (`facter.json`) that replaces `hardware-configuration.nix` on new hosts. The `nixos-facter-modules` module reads it to set kernel modules, microcode, GPU drivers, and so on.
 
 ## Installing on a new machine
@@ -196,7 +196,7 @@ sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M sta
 
 Built with [disko](https://github.com/nix-community/disko)'s image builder, so
 it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
-ESP + ext4 root) and **state survives reboots**, exactly like a machine you ran
+ESP + ZFS root pool) and **state survives reboots**, exactly like a machine you ran
 `install.sh` on. `hosts/_appliance-disk/default.nix` imports
 `disko-standard.nix` + `box-turnkey.nix`.
 

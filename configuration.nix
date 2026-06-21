@@ -100,6 +100,30 @@ in
     boot.loader.systemd-boot.enable = lib.mkDefault true;
     boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
 
+    # ── Filesystem: ZFS root ───────────────────────────────────────────────────
+    # The standard single-disk layout (nixos/disko-standard.nix) puts root on a
+    # ZFS pool ("rpool"). The kernel needs the ZFS module available at boot to
+    # import it; declare it here so every host that follows the standard layout
+    # (and the prebuilt appliance images) boots. Hosts that predate disko and
+    # still mount an ext4 root (e.g. coder-thinkcentre) are unaffected — ZFS
+    # support being present costs nothing if no ZFS pool exists.
+    boot.supportedFilesystems = [ "zfs" ];
+
+    # ZFS refuses to import a pool unless networking.hostId is set (it stamps
+    # the pool so it can't be imported on two machines at once). Derive it in
+    # Nix from the hostname: the first 8 hex digits of its sha256. Deterministic
+    # per host, and since every install host gets a unique networking.hostName
+    # (flake.nix injects the folder name) each box ends up with a distinct id —
+    # no shell-side generation needed. mkDefault so a host can still override.
+    networking.hostId =
+      lib.mkDefault (builtins.substring 0 8
+        (builtins.hashString "sha256" config.networking.hostName));
+
+    # Keep the pool healthy and SSDs happy: periodic scrub (verifies every
+    # block against its checksum and self-heals where possible) and weekly TRIM.
+    services.zfs.autoScrub.enable = lib.mkDefault true;
+    services.zfs.trim.enable      = lib.mkDefault true;
+
     # ── Swap ──────────────────────────────────────────────────────────────────
     # No on-disk swap partition (see nixos/disko-standard.nix). Use a
     # compressed in-RAM swap device instead, sized to half of RAM.
