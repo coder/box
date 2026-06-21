@@ -152,7 +152,11 @@ fi
 
 # Required tools. nixos-install only exists on the NixOS live USB, so a missing
 # one is the clearest signal you're not running this where it's meant to run.
-for tool in lsblk openssl git nix nixos-install gum; do
+# gum only drives the interactive prompts, so it's only required with
+# --interactive.
+REQUIRED_TOOLS=(lsblk openssl git nix nixos-install)
+[[ $INTERACTIVE -eq 1 ]] && REQUIRED_TOOLS+=(gum)
+for tool in "${REQUIRED_TOOLS[@]}"; do
   command -v "$tool" >/dev/null && continue
   if [[ "$tool" == "nixos-install" ]]; then
     echo "nixos-install missing (use the NixOS live USB)" >&2
@@ -258,24 +262,31 @@ list_disks() {
 
 # Interactive UI via gum (charmbracelet) — the modern alternative to the ncurses
 # dialog/whiptail family. gum is baked into the Coder box ISO (see
-# nixos/_images/base/iso.nix) and checked in the preflight tool loop above, so
-# it's a hard requirement: no plain-`read` fallback.
+# nixos/_images/base/iso.nix) and checked in the preflight tool loop (only when
+# --interactive is passed), so it's a hard requirement there: no plain-`read`
+# fallback.
 #
 # Both helpers echo the chosen value on stdout (gum draws its UI on the
 # terminal), so they're safe inside command substitution. Empty input keeps the
-# default.
+# default. gum clears its widget after submit, so we echo the question and the
+# resolved answer to the terminal (stderr) afterwards to leave a visible record.
 prompt_value() {
   # $1 = label, $2 = default
   local label="$1" default="$2" reply
   reply="$(gum input --prompt "$label: " --value "$default")" || reply="$default"
-  printf '%s' "${reply:-$default}"
+  reply="${reply:-$default}"
+  echo "  $label: $reply" >&2
+  printf '%s' "$reply"
 }
 
 prompt_secret() {
   # $1 = label, $2 = default (hidden input; empty keeps the default)
   local label="$1" default="$2" reply
   reply="$(gum input --password --prompt "$label (keep default if empty): ")" || reply=""
-  printf '%s' "${reply:-$default}"
+  reply="${reply:-$default}"
+  # Don't echo the secret itself; just confirm it was set.
+  echo "  $label: ${reply:+(set)}" >&2
+  printf '%s' "$reply"
 }
 
 # Resolve a single input variable in place, centralising the "flag wins, else
@@ -384,16 +395,22 @@ if [[ -z "$DISK_ARG" ]]; then
   fi
   echo
   mapfile -t DISKS < <(list_disks)
-  if [[ ${#DISKS[@]} -eq 0 ]]; then
-    echo "  no eligible disks found" >&2
-    echo "  override with --disk if needed (use lsblk to inspect)" >&2
-    exit 1
-  fi
-  sel="$(printf '%s\n' "${DISKS[@]}" \
+  # Always offer "Other …" so a user can type a path the auto-detection missed
+  # (unusual controllers, /dev/mapper, etc.); it's the only choice when no
+  # eligible disks were found.
+  OTHER_LABEL="Other (enter a disk path manually)"
+  sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
     | gum choose --header "Install to which disk? (it WILL be wiped)")" \
     || { echo "no disk selected" >&2; exit 1; }
   [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
-  DISK_ARG=$(awk '{print $1}' <<<"$sel")
+  if [[ "$sel" == "$OTHER_LABEL" ]]; then
+    DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
+      || { echo "no disk entered" >&2; exit 1; }
+  else
+    DISK_ARG=$(awk '{print $1}' <<<"$sel")
+  fi
+  # gum clears its widget after submit; echo the choice so it stays on screen.
+  echo "  Install to disk: $DISK_ARG" >&2
 fi
 [[ -b "$DISK_ARG" ]] || { echo "not a block device: $DISK_ARG" >&2; exit 1; }
 
