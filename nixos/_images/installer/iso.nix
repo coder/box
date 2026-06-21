@@ -31,6 +31,11 @@ let
   # failure or --no-reboot.)
   installerLauncher = pkgs.writeShellScript "coder-box-installer-launch" ''
     cd /etc/nixos-repo 2>/dev/null || cd /
+    # The installer ISO is meant to be driven interactively from this console,
+    # so default to --interactive (gum prompts for everything not preset). Any
+    # extra args forwarded to the launcher are appended after it; --yes still
+    # wins (install.sh ignores --interactive when --yes is given).
+    set -- --interactive "$@"
     echo "=== Coder Box installer ==="
     echo "Running: sudo ./install.sh $*"
     echo

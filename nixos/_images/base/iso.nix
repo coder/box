@@ -29,9 +29,15 @@
   boot.loader.systemd-boot.enable      = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
 
-  # dmidecode: read SMBIOS/DMI (board model, BIOS, serial). install.sh's
-  # hardware-description auto-detection uses it, and it's handy for inspecting
-  # the target machine from the live ISO. Ship it in the base layer so every
-  # ISO flavour (installer + appliance) has it.
-  environment.systemPackages = [ pkgs.dmidecode ];
+  # Tools install.sh expects at runtime, shipped in the base layer so every ISO
+  # flavour (installer + appliance) has them:
+  #   - dmidecode: read SMBIOS/DMI (board model, BIOS, serial) for the
+  #     hardware-description auto-detection; also handy for inspecting the target
+  #     machine from the live ISO.
+  #   - gum: the interactive TUI (charmbracelet) install.sh drives for its
+  #     --interactive prompts. install.sh hard-requires it (no fallback), so it
+  #     must be present in the live environment.
+  #   - openssl: install.sh uses `openssl rand` to generate the random default
+  #     hostname suffix (coder-box-<random>); it's in the preflight tool checks.
+  environment.systemPackages = [ pkgs.dmidecode pkgs.gum pkgs.openssl ];
 }

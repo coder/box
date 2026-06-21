@@ -98,10 +98,10 @@ From a NixOS live USB on the target box, with network access (any reasonably rec
 ```sh
 nix-shell -p git --run "git clone https://github.com/coder/box /tmp/box"
 cd /tmp/box
-sudo ./install.sh
+sudo ./install.sh --interactive
 ```
 
-The installer prompts for a target disk. Anything else not passed as a flag falls back to a default: hostname `coder-nixos`, Coder admin `admin@coder.com` / `PleaseChangeMe1234`, OS login `coderbox` / `PleaseChangeMe1234`. Passwords in the summary are obfuscated, unless they are left as defaults.
+With `--interactive` (`-i`) the installer prompts for any value not already passed as a flag, including a target disk picker. Each prompt offers a default; press Enter to accept it. Without `--interactive`, a target disk must be given via `--disk` (there is no safe default). Other values not passed as a flag fall back to a default: hostname `coder-box-<random>` (e.g. `coder-box-deadbeef`), Coder admin `admin@coder.com` / `PleaseChangeMe1234`, OS login `coderbox` / `PleaseChangeMe1234`. Passwords in the summary are obfuscated, unless they are left as defaults.
 
 For a fully unattended install, pass every value as a flag:
 
