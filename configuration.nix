@@ -15,10 +15,10 @@
 { config, pkgs, lib, ... }:
 
 let
-  coder          = pkgs.callPackage ./pkgs/coder.nix {
+  coder          = pkgs.callPackage ./packages/coder {
     channel = "mainline";
   };
-  coderdProvider = pkgs.callPackage ./pkgs/coderd-provider.nix {};
+  coderdProvider = pkgs.callPackage ./packages/coderd-provider {};
 
   # UID 991 is pinned so the DOCKER_HOST socket path is deterministic.
   # NixOS won't change an existing user's UID live, so this must stay 991.
@@ -44,9 +44,11 @@ in
   # ./hosts/<host>/ and are auto-discovered by flake.nix from the directory
   # listing. This shared config covers what every box has in common.
   imports = [
-    ./nixos/k3s-sysbox.nix     # single-node k3s + sysbox-runc (isolated Docker per workspace)
-    ./nixos/tailscale.nix      # optional Tailscale (enable in hosts/<host>/local.nix)
-    ./nixos/screenconnect.nix  # optional ScreenConnect client (enable in hosts/<host>/local.nix)
+    ./nixos/modules/k3s           # base single-node k3s server
+    ./nixos/modules/podman        # optional: rootless Podman socket runtime (enable one of podman/sysbox)
+    ./nixos/modules/sysbox        # optional: sysbox-runc runtime (isolated Docker per workspace)
+    ./nixos/modules/tailscale     # optional Tailscale (enable in hosts/<host>/local.nix)
+    ./nixos/modules/screenconnect # optional ScreenConnect client (enable in hosts/<host>/local.nix)
   ];
 
   # ── NixOS option: SSH key sync ─────────────────────────────────────────────
@@ -89,7 +91,7 @@ in
     # systemPackages, the template-deploy scripts) picks it up. Works on arm64 too.
     nixpkgs.overlays = [
       (final: prev: {
-        terraform = final.callPackage ./pkgs/terraform-binary.nix {};
+        terraform = final.callPackage ./packages/terraform-binary {};
       })
     ];
 
@@ -154,7 +156,7 @@ in
     # Central default hostname. Install hosts override this: flake.nix's mkHost
     # injects `networking.hostName = lib.mkDefault <folder-name>` for every
     # non-underscore host (so coder-thinkcentre stays coder-thinkcentre, etc.).
-    # Underscore-prefixed image/appliance hosts (_appliance_iso, _appliance-disk)
+    # Underscore-prefixed image/appliance hosts (_appliance-iso, _appliance-disk)
     # get no injection and so inherit "coder-box".
     #
     # Priority 1250 (mkOverride) is deliberately BETWEEN mkDefault (1000) and
@@ -308,10 +310,11 @@ in
     };
     boot.kernel.sysctl."user.max_user_namespaces" = 65536;
 
-    # k3s-sysbox is the workspace runtime for every shipped template (k3s-*
-    # pods and the docker-CLI sandbox). Enable by default so a fresh install
-    # actually has k3s running; hosts can opt out from their local.nix.
-    services.coder-nixos.k3s-sysbox.enable = lib.mkDefault true;
+    # sysbox is the workspace runtime for every shipped template (k3s-* pods and
+    # the docker-CLI sandbox). It pulls in the base k3s server. Enable by default
+    # so a fresh install actually has k3s running; hosts can opt out from their
+    # local.nix.
+    services.coder-nixos.sysbox.enable = lib.mkDefault true;
 
     # ── Coder user ────────────────────────────────────────────────────────────
     # UID 991 is below 1000 so isSystemUser is required (isNormalUser rejects it).

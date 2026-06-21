@@ -122,7 +122,8 @@ in
     # the bootstrap/redirect/reaper units, and template-sync are dead weight here
     # (slow startup, wasted RAM/CPU during install). Disable them — the INSTALLED
     # system still gets everything; this only affects the live installer.
-    services.coder-nixos.k3s-sysbox.enable = lib.mkForce false;
+    services.coder-nixos.sysbox.enable     = lib.mkForce false;
+    services.coder-nixos.k3s.enable        = lib.mkForce false;
     services.postgresql.enable             = lib.mkForce false;
     virtualisation.podman.enable           = lib.mkForce false;
 

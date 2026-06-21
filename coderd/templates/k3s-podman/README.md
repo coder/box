@@ -38,4 +38,4 @@ Workspaces run as Kubernetes pods on k3s. The host's **rootless Podman socket** 
 
 ## Requirements
 
-Host must have rootless Podman running as the `coder` user and the socket exposed. Enable via `nixos/k3s-podman.nix` in the NixOS configuration.
+Host must have rootless Podman running as the `coder` user and the socket exposed. Enable via `services.coder-nixos.podman.enable = true;` (module: `nixos/modules/podman`) in the NixOS configuration.

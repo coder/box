@@ -1,4 +1,4 @@
-# nixos/screenconnect.nix — optional ScreenConnect (ConnectWise Control) client
+# nixos/modules/screenconnect — optional ScreenConnect (ConnectWise Control) client
 #
 # Enable in the host's `hosts/<host>/local.nix`:
 #   services.coder-nixos.screenconnect = {

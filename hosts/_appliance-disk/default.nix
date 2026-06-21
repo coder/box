@@ -2,7 +2,7 @@
 #
 # Folder name = nixosConfigurations attribute (see flake.nix host
 # auto-discovery), so this host is exposed as `nixosConfigurations._appliance-disk`.
-# Unlike the appliance ISO (hosts/_appliance_iso), this builds a *persistent* disk
+# Unlike the appliance ISO (hosts/_appliance-iso), this builds a *persistent* disk
 # image (qcow2 or raw) using disko's image builder: it carries the real on-disk
 # GPT layout (1 GB ESP + ZFS root pool from nixos/disko-standard.nix) and state
 # survives reboots, exactly like a machine you ran install.sh on.

@@ -7,8 +7,8 @@
 # outside the flake tree.
 #
 # To enable k3s add one of these below:
-#   services.coder-nixos.k3s-sysbox.enable = true;  # sysbox-runc (Docker per workspace)
-#   services.coder-nixos.k3s.enable = true;          # rootless Podman variant
+#   services.coder-nixos.sysbox.enable = true;  # sysbox-runc (Docker per workspace)
+#   services.coder-nixos.podman.enable = true;  # rootless Podman variant
 
 { lib, ... }:
 
@@ -35,7 +35,7 @@
   # for the wrong architecture and will fail or produce a broken system.
   # nixpkgs.hostPlatform = "aarch64-linux";
 
-  services.coder-nixos.k3s-sysbox.enable = true;
+  services.coder-nixos.sysbox.enable = true;
 
   system.stateVersion = "25.11";
 }

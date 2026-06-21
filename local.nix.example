@@ -72,7 +72,7 @@ in
   # ── k3s + sysbox-runc ──────────────────────────────────────────────────────
   # Enabled by default in configuration.nix because every shipped template
   # needs k3s. Uncomment to opt this host out.
-  # services.coder-nixos.k3s-sysbox.enable = false;
+  # services.coder-nixos.sysbox.enable = false;
 
   # ── Tailscale (optional) ────────────────────────────────────────────────────
   # services.coder-nixos.tailscale = {

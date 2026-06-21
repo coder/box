@@ -126,17 +126,17 @@ installer/drv:
 installer/drv/%:
 	$(call box_instantiate,_installer-iso,isoImage,,$*)
 
-# ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
+# ── appliance/iso — ephemeral appliance ISO (hosts/_appliance-iso) ───────────
 appliance/iso:
-	$(call box_iso,_appliance_iso,isoImageDir,,)
+	$(call box_iso,_appliance-iso,isoImageDir,,)
 appliance/iso/%:
-	$(call box_iso,_appliance_iso,isoImageDir,,$*)
+	$(call box_iso,_appliance-iso,isoImageDir,,$*)
 
 # ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
 appliance/drv:
-	$(call box_instantiate,_appliance_iso,isoImage,,)
+	$(call box_instantiate,_appliance-iso,isoImage,,)
 appliance/drv/%:
-	$(call box_instantiate,_appliance_iso,isoImage,,$*)
+	$(call box_instantiate,_appliance-iso,isoImage,,$*)
 
 # ── appliance/qcow2 — persistent disk image (hosts/_appliance-disk) ──────────
 appliance/qcow2:
