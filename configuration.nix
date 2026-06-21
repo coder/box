@@ -921,6 +921,33 @@ EOF
       };
     };
 
+    # ── Keep the workshop Keycloak (Railway) warm ─────────────────────────────
+    # Railway can idle/cold-start a service; the FIRST attendee login after idle
+    # then stalls a few seconds. Ping Keycloak every 2 min so the container stays
+    # warm during the event. No-op when services.coder-nixos.keycloakUrl is unset.
+    systemd.services.keycloak-keepwarm = lib.mkIf (config.services.coder-nixos.keycloakUrl != "") {
+      description = "Ping the workshop Keycloak so Railway keeps it warm";
+      serviceConfig = {
+        Type      = "oneshot";
+        User      = "nobody";
+        ExecStart = pkgs.writeShellScript "keycloak-keepwarm" ''
+          ${pkgs.curl}/bin/curl -sf -o /dev/null --max-time 15 \
+            "${config.services.coder-nixos.keycloakUrl}/realms/workshop/.well-known/openid-configuration" \
+            && echo "keycloak-keepwarm: ok" || echo "keycloak-keepwarm: ping failed (non-fatal)"
+        '';
+      };
+    };
+
+    systemd.timers.keycloak-keepwarm = lib.mkIf (config.services.coder-nixos.keycloakUrl != "") {
+      description = "Ping Keycloak every 2 minutes to avoid Railway cold starts";
+      wantedBy    = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec       = "2min";
+        OnUnitActiveSec = "2min";
+        Unit            = "keycloak-keepwarm.service";
+      };
+    };
+
 
     # ── coder-logstream-kube Helm install ─────────────────────────────────────
     # Streams k3s pod events (scheduling, image pull, OOMKill, etc.) into
