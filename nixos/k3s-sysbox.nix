@@ -351,9 +351,17 @@ in
     # Inject KUBECONFIG for Terraform's kubernetes provider, and order after
     # coder-k3s-namespace so the coder-workspaces namespace exists before
     # Coder's first workspace build (else it fails: namespace not found).
+    #
+    # NOTE: use `wants` (soft), NOT `requires` (hard), for the namespace dep.
+    # With `after` + `requires`, a failed coder-k3s-namespace.service (which
+    # runs `set -euo pipefail` and can flake on a cold first boot if the k3s
+    # API isn't accepting requests yet) would prevent coder.service from
+    # starting at all. We only want ordering here; the namespace service is
+    # already `wantedBy = multi-user.target`, so `wants` keeps it pulled in and
+    # ordered before coder without letting a transient flake block the server.
     systemd.services.coder = {
-      after    = [ "coder-k3s-namespace.service" ];
-      requires = [ "coder-k3s-namespace.service" ];
+      after = [ "coder-k3s-namespace.service" ];
+      wants = [ "coder-k3s-namespace.service" ];
       environment = {
         KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       };
