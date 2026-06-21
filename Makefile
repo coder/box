@@ -70,11 +70,21 @@ norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 # native, non-copy way to surface the result in the repo: ./out/<link> points
 # straight at the store path, and being a GC root it won't be garbage-collected.
 # ./out is gitignored.
+# The shared flake expression, factored out so box_build and box_instantiate
+# can't drift apart. Selects `config.system.build` for the configured system;
+# callers append the build attr (and, for instantiate, `.drvPath`). This is the
+# per-arch override described above (always-pinned hostPlatform; native arch via
+# currentSystem when no token is given; Makefile-injected coderBox.rev).
+#   $(1) = host                 (nixosConfigurations.<host>)
+#   $(2) = arch token           (empty = builder's native arch)
+#   $(3) = extra module fields  (nix attrset body, may be empty)
+box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(2),$(call norm_arch,$(2)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build
+
 define box_build
 	@mkdir -p out
 	$(NIX) build --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
-	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2)'
+	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
 
 # Instantiate-only counterpart to box_build: same flake expr, but evaluates
@@ -85,7 +95,7 @@ endef
 #   $(1) = host   $(2) = system.build.<attr>   $(3) = extra module fields   $(4) = arch token
 define box_instantiate
 	$(NIX) eval --impure --no-write-lock-file --raw --expr \
-	  'let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(4),$(call norm_arch,$(4)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build.$(2).drvPath'
+	  '$(call box_cfg,$(1),$(4),$(3)).$(2).drvPath'
 	@echo
 endef
 
