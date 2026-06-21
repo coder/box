@@ -5,9 +5,10 @@
 #   * push a tag matching v*  (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
 #   * run manually from the Actions tab (workflow_dispatch) and supply a tag.
 #
-# The build job is the same native per-arch `make installer/iso/<arch>` matrix
-# as build.yml; the release job then gathers both ISOs and attaches them to the
-# release for the chosen tag.
+# Each arch builds on a native runner inside the `nixos/nix` container, so
+# `make installer/iso` resolves to the runner's native `builtins.currentSystem`
+# and produces out/installer-iso/iso/coder-box-installer-<arch>-linux.iso. The
+# release job then gathers both ISOs and attaches them to the release.
 
 name: release
 
@@ -33,54 +34,50 @@ concurrency:
 
 jobs:
   build:
-    name: installer/iso (${{ matrix.arch }})
+    name: installer/iso (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
+    container:
+      image: nixos/nix:latest
     strategy:
       fail-fast: true
       matrix:
         include:
-          - arch: x86_64-linux
+          - system: x86_64-linux
             runner: ubuntu-24.04
-          - arch: aarch64-linux
+          - system: aarch64-linux
             runner: ubuntu-24.04-arm
+    env:
+      NIX_CONFIG: |
+        experimental-features = nix-command flakes
+        accept-flake-config = true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
-        with:
-          extra-conf: |
-            experimental-features = nix-command flakes
-            accept-flake-config = true
-
-      - name: Cache Nix store
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
       - name: Build installer ISO
-        run: make installer/iso/${{ matrix.arch }}
+        # gnumake provides `make`; git lets the Makefile stamp the build rev.
+        run: nix-shell -p gnumake git --run "make installer/iso"
 
       - name: Stage ISO for upload
-        id: iso
         run: |
           mkdir -p dist
-          src=$(readlink -f "out/installer-iso-${{ matrix.arch }}/iso")/coder-box-installer-${{ matrix.arch }}.iso
+          src="out/installer-iso/iso/coder-box-installer-${{ matrix.system }}.iso"
           if [ ! -f "$src" ]; then
             echo "Expected ISO not found at $src" >&2
             ls -lR out/ >&2 || true
             exit 1
           fi
-          cp "$src" "dist/coder-box-installer-${{ matrix.arch }}.iso"
+          cp -L "$src" "dist/coder-box-installer-${{ matrix.system }}.iso"
           # Checksum so release consumers can verify the download.
-          (cd dist && sha256sum "coder-box-installer-${{ matrix.arch }}.iso" \
-            >"coder-box-installer-${{ matrix.arch }}.iso.sha256")
+          (cd dist && sha256sum "coder-box-installer-${{ matrix.system }}.iso" \
+            >"coder-box-installer-${{ matrix.system }}.iso.sha256")
           ls -lh dist/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coder-box-installer-${{ matrix.arch }}
-          path: dist/coder-box-installer-${{ matrix.arch }}.iso*
+          name: coder-box-installer-${{ matrix.system }}
+          path: dist/coder-box-installer-${{ matrix.system }}.iso*
           if-no-files-found: error
 
   release:
