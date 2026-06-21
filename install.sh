@@ -413,33 +413,31 @@ fi
 if [[ -z "$DISK_ARG" && $INTERACTIVE -eq 1 ]]; then
   echo
   mapfile -t DISKS < <(list_disks)
-  # Always offer "Other …" so a user can type a path the auto-detection missed
-  # (unusual controllers, /dev/mapper, etc.); it's the only choice when no
-  # eligible disks were found. gum choose has no non-selectable rows, so instead
-  # of a separate divider line (which would be focusable), the divider is fused
-  # into the "Other" label — it stands apart visually but isn't its own pickable
-  # item. The leading divider is only shown when there are disks to separate from.
-  OTHER_TEXT="Other (enter a disk path manually)"
-  if [[ ${#DISKS[@]} -gt 0 ]]; then
-    OTHER_LABEL="────────  $OTHER_TEXT"
-  else
-    OTHER_LABEL="$OTHER_TEXT"
-  fi
-  sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
-    | gum choose --header "Install to which disk? (it WILL be wiped)")" \
-    || { echo "no disk selected" >&2; exit 1; }
-  [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
-  if [[ "$sel" == "$OTHER_LABEL" ]]; then
-    # Prefill with the main guessed disk (first detected) so the user can edit a
-    # near-correct path instead of typing from scratch; fall back to a hint when
-    # nothing was detected.
-    guessed_disk=""
-    [[ ${#DISKS[@]} -gt 0 ]] && guessed_disk="$(awk '{print $1}' <<<"${DISKS[0]}")"
-    DISK_ARG="$(gum input --prompt "Disk path: " \
-      --value "$guessed_disk" --placeholder "/dev/sda")" \
+  if [[ ${#DISKS[@]} -eq 0 ]]; then
+    # Nothing auto-detected: skip the picker and drop straight to manual entry.
+    echo "  disk detection found no eligible disks; enter a path manually" >&2
+    DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
       || { echo "no disk entered" >&2; exit 1; }
   else
-    DISK_ARG=$(awk '{print $1}' <<<"$sel")
+    # Offer the detected disks plus an "Other …" escape hatch for paths the
+    # auto-detection missed (unusual controllers, /dev/mapper, etc.). gum choose
+    # has no non-selectable rows, so the divider is fused into the "Other" label
+    # (visually apart, but not its own pickable item) rather than a separate
+    # focusable divider line.
+    OTHER_LABEL="────────  Other (enter a disk path manually)"
+    sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
+      | gum choose --header "Install to which disk? (it WILL be wiped)")" \
+      || { echo "no disk selected" >&2; exit 1; }
+    [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
+    if [[ "$sel" == "$OTHER_LABEL" ]]; then
+      # Prefill with the main guessed disk (first detected) so the user can edit
+      # a near-correct path instead of typing from scratch.
+      DISK_ARG="$(gum input --prompt "Disk path: " \
+        --value "$(awk '{print $1}' <<<"${DISKS[0]}")" --placeholder "/dev/sda")" \
+        || { echo "no disk entered" >&2; exit 1; }
+    else
+      DISK_ARG=$(awk '{print $1}' <<<"$sel")
+    fi
   fi
   # gum clears its widget after submit; echo the choice so it stays on screen.
   echo "  Install to disk: $DISK_ARG" >&2
