@@ -81,12 +81,14 @@ jobs:
             sh -euc "
               export NIX_CONFIG='experimental-features = nix-command flakes'
               git config --global --add safe.directory /work
-              # gnumake provides 'make'; git lets the Makefile stamp the rev.
+              # gnumake provides 'make'; git lets the Makefile stamp the rev. The
+              # ISO targets also emit out/<name>.iso.sha256 sidecar checksums so
+              # release consumers can verify the download.
               nix-shell -p gnumake git --run \"make $TARGET\"
-              # Dereference the build's store symlink into the /dist volume, then
-              # checksum it so release consumers can verify the download.
+              # Dereference the build's store symlink into the /dist volume,
+              # alongside the make-generated checksum sidecar.
               cp -L $outlink/*.iso /dist/
-              cd /dist && for f in *.iso; do sha256sum \"\$f\" >\"\$f.sha256\"; done
+              cp out/*.iso.sha256 /dist/
             "
           ls -lh "$dist"
 

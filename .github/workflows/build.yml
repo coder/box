@@ -92,10 +92,13 @@ jobs:
               # Repo is bind-mounted and owned by a different uid; allow git to
               # read it so the Makefile can stamp the build rev.
               git config --global --add safe.directory /work
-              # gnumake provides 'make'; git lets the Makefile stamp the rev.
+              # gnumake provides 'make'; git lets the Makefile stamp the rev. The
+              # ISO targets also emit out/<name>.iso.sha256 sidecar checksums.
               nix-shell -p gnumake git --run \"make $TARGET\"
-              # Dereference the build's store symlink into the /dist volume.
+              # Dereference the build's store symlink into the /dist volume,
+              # alongside the make-generated checksum sidecar.
               cp -L $outlink/*.iso /dist/
+              cp out/*.iso.sha256 /dist/
             "
           ls -lh "$dist"
 
@@ -103,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-${{ matrix.target == 'installer/iso' && 'installer' || 'appliance' }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/*.iso
+          path: ${{ steps.build.outputs.dist }}/*.iso*
           # Verification build; keep storage cost minimal.
           retention-days: 1
           if-no-files-found: error

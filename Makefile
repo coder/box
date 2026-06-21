@@ -87,6 +87,22 @@ define box_build
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
 
+# ISO build helper: box_build, then emit a SHA-256 sidecar for each produced
+# ISO. iso-image.nix lands the image under <out-link>/iso/<name>.iso, which
+# lives in the read-only /nix/store; we write the checksum into the writable
+# ./out dir as out/<name>.iso.sha256, with the bare basename (no store path) so
+# `sha256sum -c` verifies against the ISO sitting next to it. Same arg shape as
+# box_build (always $(2)=isoImage here).
+define box_iso
+	$(call box_build,$(1),$(2),$(3),$(4))
+	@link='out/$(subst /,-,$@)'; \
+	for iso in "$$link"/iso/*.iso; do \
+	  base=$$(basename "$$iso"); \
+	  ( cd "$$link/iso" && sha256sum "$$base" ) > "out/$$base.sha256"; \
+	  echo "out/$$base.sha256"; \
+	done
+endef
+
 # Instantiate-only counterpart to box_build: same flake expr, but evaluates
 # `.drvPath` so Nix fully evaluates the config and writes the .drv to the store
 # WITHOUT realising the (multi-GB) image. Cheap CI validation that the Nix is
@@ -105,9 +121,9 @@ endef
 
 # ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
 installer/iso:
-	$(call box_build,_installer-iso,isoImage,,)
+	$(call box_iso,_installer-iso,isoImage,,)
 installer/iso/%:
-	$(call box_build,_installer-iso,isoImage,,$*)
+	$(call box_iso,_installer-iso,isoImage,,$*)
 
 # ── installer/drv — instantiate the installer ISO derivation (no build) ───────
 installer/drv:
@@ -117,9 +133,9 @@ installer/drv/%:
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:
-	$(call box_build,_appliance_iso,isoImage,,)
+	$(call box_iso,_appliance_iso,isoImage,,)
 appliance/iso/%:
-	$(call box_build,_appliance_iso,isoImage,,$*)
+	$(call box_iso,_appliance_iso,isoImage,,$*)
 
 # ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
 appliance/drv:
