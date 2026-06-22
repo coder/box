@@ -9,20 +9,21 @@
 # directory`. So checkout/upload run on the host runner and only `make` runs in
 # the container.
 #
-# `make <kind>/iso` resolves to the runner's native `builtins.currentSystem`
-# (x86_64-linux or aarch64-linux) and produces
-# out/<kind>-iso/iso/coder-box-<kind>-<arch>-linux.iso (+ a .sha256 sidecar)
-# inside the container. The container /nix/store is ephemeral, so we dereference
-# the ISO into a host /dist volume and upload from there.
+# One job per arch builds BOTH kinds in the SAME container (installer first,
+# appliance second). `make <kind>/iso` resolves to the runner's native
+# `builtins.currentSystem` and produces
+# out/<kind>-iso/iso/coder-box-<kind>-<arch>-linux.iso (+ a .sha256 sidecar);
+# the container /nix/store is ephemeral, so we dereference the ISOs into a host
+# /dist volume and upload from there.
 #
-# Triggers / what gets built:
-#   * push to main, workflow_dispatch  → always build the full ISO.
-#   * pull_request (ready, non-draft)  → a per-step `if:` on the kind's label
-#       decides: with test-installer-iso / test-appliance-iso applied, realise
-#       the full ISO; without it, just instantiate the .drv (cheap validation,
-#       no image). The `labeled` trigger means adding the label kicks off the
-#       full build.
-# Verification artifacts are short-lived (1 day).
+# Triggers / what gets built per kind:
+#   * push to main, workflow_dispatch  → always build both full ISOs.
+#   * pull_request (ready, non-draft)  → realise a kind's full ISO only when its
+#       label (test-installer-iso / test-appliance-iso) is applied; without the
+#       label that kind is just instantiated (.drv, cheap validation, no image).
+#       The `labeled` trigger means adding the label kicks off the full build.
+# The job title reflects which kinds get a full build. Verification artifacts
+# are short-lived (1 day).
 
 name: Build ISO
 
@@ -50,40 +51,34 @@ concurrency:
 
 jobs:
   iso:
-    name: ${{ matrix.kind }} (${{ matrix.system }})
+    # Title varies with which kinds get a full build (drv-only kinds aren't
+    # named): "Installer + Appliance", "Installer", "Appliance", or
+    # "Derivations" when neither is labelled on a PR.
+    name: >-
+      ${{ (
+            (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))
+            && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))
+          ) && 'Installer + Appliance'
+       || (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) && 'Installer'
+       || (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) && 'Appliance'
+       || 'Derivations' }} (${{ matrix.system }})
     # Skip draft PRs (opened/reopened/labeled fire for drafts too); always run
     # for push and manual dispatch.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
     env:
-      # full = realise the ISO; drv-only otherwise. Non-PR events (push, manual
-      # dispatch) always build the full ISO; a PR builds a kind's full ISO only
-      # when its label (test-installer-iso / test-appliance-iso) is applied.
-      # Step `if:`s below branch on this.
-      FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, matrix.label) }}
+      # Per kind: realise the full ISO, or (drv-only) just instantiate. Non-PR
+      # events (push, manual dispatch) build both full; a PR builds a kind's
+      # full ISO only when its label is applied. Steps below branch on these.
+      INSTALLER_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso') }}
+      APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso') }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - kind: Installer
-            target: installer
-            label: test-installer-iso
-            system: x86_64-linux
+          - system: x86_64-linux
             runner: ubuntu-24.04
-          - kind: Installer
-            target: installer
-            label: test-installer-iso
-            system: aarch64-linux
-            runner: ubuntu-24.04-arm
-          - kind: Appliance
-            target: appliance
-            label: test-appliance-iso
-            system: x86_64-linux
-            runner: ubuntu-24.04
-          - kind: Appliance
-            target: appliance
-            label: test-appliance-iso
-            system: aarch64-linux
+          - system: aarch64-linux
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
@@ -93,39 +88,20 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Instantiate ISO derivation
-        # No label on a PR: just evaluate the .drv (cheap validation, no image).
-        if: env.FULL != 'true'
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            -e TARGET \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              nix-shell -p gnumake git --run "make $TARGET/drv"
-            '
-
-      - name: Build full ISO
-        # Label present (or non-PR event): realise the full image.
-        if: env.FULL == 'true'
+      - name: Build ISOs
         id: build
-        env:
-          TARGET: ${{ matrix.target }}
+        # INSTALLER_FULL / APPLIANCE_FULL come from the job-level env above.
         run: |
-          # Host /dist volume, bind-mounted into the container, where the build
-          # drops the finished ISO + checksum (the container's /nix/store is
+          # Host /dist volume, bind-mounted into the container, where full builds
+          # drop the finished ISO + checksum (the container's /nix/store is
           # ephemeral, so the in-tree out/ symlink would dangle on the host).
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          outlink="out/$TARGET-iso/iso"
+          # Both kinds run in ONE container; installer first, appliance later.
           docker run --rm \
             -v "$PWD":/work -w /work \
             -v "$dist":/dist \
-            -e TARGET -e outlink="$outlink" \
+            -e INSTALLER_FULL -e APPLIANCE_FULL \
             nixos/nix:latest \
             sh -euc '
               # The Makefile builds via "nix build --impure" and needs flakes +
@@ -134,33 +110,60 @@ jobs:
               # Repo is bind-mounted and owned by a different uid; allow git to
               # read it so the Makefile can stamp the build rev.
               git config --global --add safe.directory /work
-              # gnumake provides "make"; git lets the Makefile stamp the rev. The
-              # ISO targets also emit out/<name>.iso.sha256 sidecar checksums.
-              # Bare target → native currentSystem (matrix pins the runner arch).
-              nix-shell -p gnumake git --run "make $TARGET/iso"
-              # Dereference the build store symlink (+ checksum sidecar) into the
-              # /dist volume for upload.
-              cp -L "$outlink"/*.iso /dist/
-              cp out/*.iso.sha256 /dist/
+
+              # full build → realise the ISO and copy it (+ its .sha256 sidecar,
+              # written next to out/) into /dist; otherwise just instantiate the
+              # derivation. Bare target → native currentSystem (matrix pins the
+              # runner arch). gnumake provides "make"; git stamps the build rev.
+              build_kind() {
+                kind="$1"; full="$2"
+                if [ "$full" = "true" ]; then
+                  nix-shell -p gnumake git --run "make $kind/iso"
+                  cp -L "out/$kind-iso/iso"/*.iso /dist/
+                  cp "out/coder-box-$kind"-*.iso.sha256 /dist/
+                else
+                  nix-shell -p gnumake git --run "make $kind/drv"
+                fi
+              }
+
+              build_kind installer "$INSTALLER_FULL"
+              build_kind appliance "$APPLIANCE_FULL"
             '
           ls -lh "$dist"
 
-      - name: Upload ISO artifact
-        # drv-only runs produce no image, so nothing to upload.
-        if: env.FULL == 'true'
+      - name: Upload installer ISO artifact
+        if: env.INSTALLER_FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: coder-box-${{ matrix.target }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/*.iso
+          name: coder-box-installer-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
           # Verification build; keep storage cost minimal.
           retention-days: 1
           if-no-files-found: error
 
-      - name: Upload ISO checksum artifact
-        if: env.FULL == 'true'
+      - name: Upload installer checksum artifact
+        if: env.INSTALLER_FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/*.iso.sha256
+          name: coder-box-installer-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload appliance ISO artifact
+        if: env.APPLIANCE_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-appliance-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload appliance checksum artifact
+        if: env.APPLIANCE_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-appliance-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
