@@ -19,4 +19,5 @@ hosts/*
 !hosts/_appliance_iso/
 !hosts/_installer-iso/
 !hosts/coder-thinkcentre/
+!hosts/incus-vm/
 !hosts/qemu-arm64/
