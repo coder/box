@@ -17,10 +17,11 @@
 #
 # Triggers / what gets built:
 #   * push to main, workflow_dispatch  → always build the full ISO.
-#   * pull_request (ready, non-draft)  → build the full ISO for a kind ONLY when
-#       its label is applied (test-installer-iso / test-appliance-iso); without
-#       the label we just instantiate the .drv (cheap validation, no image).
-#       The `labeled` trigger means adding the label kicks off the full build.
+#   * pull_request (ready, non-draft)  → a per-step `if:` on the kind's label
+#       decides: with test-installer-iso / test-appliance-iso applied, realise
+#       the full ISO; without it, just instantiate the .drv (cheap validation,
+#       no image). The `labeled` trigger means adding the label kicks off the
+#       full build.
 # Verification artifacts are short-lived (1 day).
 
 name: Build ISO
@@ -54,6 +55,12 @@ jobs:
     # for push and manual dispatch.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.runner }}
+    env:
+      # full = realise the ISO; drv-only otherwise. Non-PR events (push, manual
+      # dispatch) always build the full ISO; a PR builds a kind's full ISO only
+      # when its label (test-installer-iso / test-appliance-iso) is applied.
+      # Step `if:`s below branch on this.
+      FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, matrix.label) }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,44 +93,23 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Decide what to build
-        id: plan
-        env:
-          # full = realise the ISO; otherwise just instantiate the .drv.
-          # Non-PR events always build the full ISO. PRs require the kind's
-          # label to be present.
-          FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, matrix.label) }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          # Bare targets resolve to the runner's native currentSystem (the
-          # matrix pins the matching native runner per arch).
-          if [ "$FULL" = "true" ]; then
-            echo "make=$TARGET/iso" >>"$GITHUB_OUTPUT"
-            echo "full=true" >>"$GITHUB_OUTPUT"
-            echo "Building full ISO: make $TARGET/iso"
-          else
-            echo "make=$TARGET/drv" >>"$GITHUB_OUTPUT"
-            echo "full=false" >>"$GITHUB_OUTPUT"
-            echo "No $TARGET label; instantiating derivation only: make $TARGET/drv"
-          fi
-
-      - name: Build (in nixos/nix container)
+      - name: Build full ISO (in nixos/nix container)
+        # Label present (or non-PR event): realise the full image.
+        if: env.FULL == 'true'
         id: build
         env:
-          MAKE_TARGET: ${{ steps.plan.outputs.make }}
-          FULL: ${{ steps.plan.outputs.full }}
           TARGET: ${{ matrix.target }}
         run: |
-          # Host /dist volume, bind-mounted into the container, where a full
-          # build drops the finished ISO + checksum (the container's /nix/store
-          # is ephemeral, so the in-tree out/ symlink would dangle on the host).
+          # Host /dist volume, bind-mounted into the container, where the build
+          # drops the finished ISO + checksum (the container's /nix/store is
+          # ephemeral, so the in-tree out/ symlink would dangle on the host).
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
           outlink="out/$TARGET-iso/iso"
           docker run --rm \
             -v "$PWD":/work -w /work \
             -v "$dist":/dist \
-            -e MAKE_TARGET -e FULL -e outlink="$outlink" \
+            -e TARGET -e outlink="$outlink" \
             nixos/nix:latest \
             sh -euc '
               # The Makefile builds via "nix build --impure" and needs flakes +
@@ -134,19 +120,34 @@ jobs:
               git config --global --add safe.directory /work
               # gnumake provides "make"; git lets the Makefile stamp the rev. The
               # ISO targets also emit out/<name>.iso.sha256 sidecar checksums.
-              nix-shell -p gnumake git --run "make $MAKE_TARGET"
-              # Only a full build produces an image; dereference it (+ checksum
-              # sidecar) into the /dist volume for upload.
-              if [ "$FULL" = "true" ]; then
-                cp -L "$outlink"/*.iso /dist/
-                cp out/*.iso.sha256 /dist/
-              fi
+              # Bare target → native currentSystem (matrix pins the runner arch).
+              nix-shell -p gnumake git --run "make $TARGET/iso"
+              # Dereference the build store symlink (+ checksum sidecar) into the
+              # /dist volume for upload.
+              cp -L "$outlink"/*.iso /dist/
+              cp out/*.iso.sha256 /dist/
             '
           ls -lh "$dist"
 
+      - name: Instantiate ISO derivation (in nixos/nix container)
+        # No label on a PR: just evaluate the .drv (cheap validation, no image).
+        if: env.FULL != 'true'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            -e TARGET \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              nix-shell -p gnumake git --run "make $TARGET/drv"
+            '
+
       - name: Upload ISO artifact
         # drv-only runs produce no image, so nothing to upload.
-        if: steps.plan.outputs.full == 'true'
+        if: env.FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}
