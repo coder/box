@@ -72,7 +72,7 @@ jobs:
           # to release an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Build ISO (in nixos/nix container)
+      - name: Build ISO
         id: build
         env:
           TARGET: ${{ matrix.target }}
@@ -104,11 +104,18 @@ jobs:
             '
           ls -lh "$dist"
 
-      - name: Upload build artifact
+      - name: Upload ISO artifact
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/*.iso*
+          path: ${{ steps.build.outputs.dist }}/*.iso
+          if-no-files-found: error
+
+      - name: Upload ISO checksum artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/*.iso.sha256
           if-no-files-found: error
 
   release:

@@ -93,7 +93,23 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Build full ISO (in nixos/nix container)
+      - name: Instantiate ISO derivation
+        # No label on a PR: just evaluate the .drv (cheap validation, no image).
+        if: env.FULL != 'true'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            -e TARGET \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              nix-shell -p gnumake git --run "make $TARGET/drv"
+            '
+
+      - name: Build full ISO
         # Label present (or non-PR event): realise the full image.
         if: env.FULL == 'true'
         id: build
@@ -129,29 +145,22 @@ jobs:
             '
           ls -lh "$dist"
 
-      - name: Instantiate ISO derivation (in nixos/nix container)
-        # No label on a PR: just evaluate the .drv (cheap validation, no image).
-        if: env.FULL != 'true'
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            -e TARGET \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              nix-shell -p gnumake git --run "make $TARGET/drv"
-            '
-
       - name: Upload ISO artifact
         # drv-only runs produce no image, so nothing to upload.
         if: env.FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/*.iso*
+          path: ${{ steps.build.outputs.dist }}/*.iso
           # Verification build; keep storage cost minimal.
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload ISO checksum artifact
+        if: env.FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/*.iso.sha256
           retention-days: 1
           if-no-files-found: error
