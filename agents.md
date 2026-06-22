@@ -68,6 +68,13 @@ The `gh` CLI is installed as a helper for working with this repo (opening PRs,
 checking CI, etc.). It is not authenticated out of the box — run `gh auth login`
 once as the login user. Still don't push or open PRs unless explicitly asked.
 
+`.gitignore` ignores the whole `hosts/` directory (so users can drop their own
+hosts in without git noise), then un-ignores each centrally-managed host with a
+`!hosts/<host>/` line. **When you add a new centrally-managed host, add a
+matching `!hosts/<host>/` line to `.gitignore`** — otherwise its files stay
+ignored and `git add` rejects them (per-host `local.nix`/`facter.json` remain
+ignored via the `hosts/*/local.nix` rule).
+
 ## Template Management
 
 Templates live in two places:
