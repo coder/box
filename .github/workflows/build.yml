@@ -32,10 +32,11 @@ on:
     branches: [main]
   pull_request:
     # `opened`/`reopened` cover a PR created/reopened already non-draft,
-    # `ready_for_review` a draft promoted to ready, and `labeled` so applying a
-    # test-*-iso label starts the full build. Notably absent is `synchronize`,
-    # so pushing new commits does NOT rebuild (eval.yml covers per-commit drv).
-    types: [opened, reopened, ready_for_review, labeled]
+    # `ready_for_review` a draft promoted to ready, `labeled` so applying a
+    # test-*-iso label starts the full build, and `synchronize` so pushing new
+    # commits re-runs the build — re-evaluating the labels so a labelled kind
+    # is re-built (not just its derivation) on every commit.
+    types: [opened, reopened, ready_for_review, labeled, synchronize]
   workflow_dispatch:
     inputs:
       ref:
