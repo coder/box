@@ -18,12 +18,14 @@
 #
 # Triggers / what gets built per kind:
 #   * push to main, workflow_dispatch  → always build both full ISOs.
-#   * pull_request (ready, non-draft)  → realise a kind's full ISO only when its
-#       label (test-installer-iso / test-appliance-iso) is applied; without the
-#       label that kind is just instantiated (.drv, cheap validation, no image).
-#       The `labeled` trigger means adding the label kicks off the full build.
-# The job title reflects which kinds get a full build. Verification artifacts
-# are short-lived (1 day).
+#   * pull_request                     → realise a kind's full ISO only when the
+#       PR is ready-for-review (non-draft) AND its label (test-installer-iso /
+#       test-appliance-iso) is applied; otherwise (draft, or no label) that kind
+#       is just instantiated (.drv, cheap validation, no image). The `labeled`
+#       trigger means adding the label kicks off the full build.
+# The job always runs (drafts just do derivations) so its name renders rather
+# than showing a skipped job's raw name expression; the build STEP name shows
+# the per-kind plan. Verification artifacts are short-lived (1 day).
 
 name: Build ISO
 
@@ -52,27 +54,24 @@ concurrency:
 
 jobs:
   iso:
-    # Title varies with which kinds get a full build (drv-only kinds aren't
-    # named): "Installer + Appliance", "Installer", "Appliance", or
-    # "Derivations" when neither is labelled on a PR.
-    name: >-
-      ${{ (
-            (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))
-            && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))
-          ) && 'Installer + Appliance'
-       || (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) && 'Installer'
-       || (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) && 'Appliance'
-       || 'Derivations' }} (${{ matrix.system }})
-    # Skip draft PRs (opened/reopened/labeled fire for drafts too); always run
-    # for push and manual dispatch.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Keep the job name STATIC. A `name:` expression is only interpolated when
+    # the job actually runs — for a skipped job GitHub shows the raw, normalised
+    # expression (an unreadable wall of parens). So which kinds get a full build
+    # is surfaced in the build STEP name instead (step names only render when
+    # the job runs, never raw). See the build step below.
+    name: Build ISO (${{ matrix.system }})
+    # NOTE: no job-level draft skip. Skipping the whole job on draft PRs (a) left
+    # the job name unrendered/garbage and (b) meant a draft built nothing here.
+    # Instead the per-kind FULL flags below treat drafts as "no full build", so
+    # the job always runs and a draft just instantiates derivations (cheap).
     runs-on: ${{ matrix.runner }}
     env:
       # Per kind: realise the full ISO, or (drv-only) just instantiate. Non-PR
       # events (push, manual dispatch) build both full; a PR builds a kind's
-      # full ISO only when its label is applied. Steps below branch on these.
-      INSTALLER_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-installer-iso') }}
-      APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-appliance-iso') }}
+      # full ISO only when it is ready-for-review (non-draft) AND its label is
+      # applied. Draft PRs → drv-only for both. Steps below branch on these.
+      INSTALLER_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
+      APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -89,10 +88,23 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Build ISOs
+      # Step name carries the per-kind plan (full ISO vs drv only). Unlike the
+      # job name this is always interpolated, because steps are only displayed
+      # when the job runs. Examples: "Build installer ISO + appliance ISO",
+      # "Build installer ISO + appliance drv", "Build installer drv + appliance drv".
+      - name: >-
+          Build installer ${{ env.INSTALLER_FULL == 'true' && 'ISO' || 'drv' }}
+          + appliance ${{ env.APPLIANCE_FULL == 'true' && 'ISO' || 'drv' }}
         id: build
         # INSTALLER_FULL / APPLIANCE_FULL come from the job-level env above.
         run: |
+          # Record the per-kind plan in the run summary for quick scanning.
+          plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }
+          {
+            echo "### Build plan (${{ matrix.system }})"
+            echo "- installer: $(plan "$INSTALLER_FULL")"
+            echo "- appliance: $(plan "$APPLIANCE_FULL")"
+          } >>"$GITHUB_STEP_SUMMARY"
           # Host /dist volume, bind-mounted into the container, where full builds
           # drop the finished ISO + checksum (the container's /nix/store is
           # ephemeral, so the in-tree out/ symlink would dangle on the host).
