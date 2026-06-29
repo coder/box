@@ -1,0 +1,158 @@
+# Build and release ISO — builds the installer AND appliance ISOs for every
+# supported architecture and publishes them as assets on a GitHub Release.
+#
+# Trigger either way:
+#   * push a tag matching v*  (e.g. `git tag v1.2.0 && git push origin v1.2.0`)
+#   * run manually from the Actions tab (workflow_dispatch), supplying a tag
+#     and optionally a ref/commit to build.
+#
+# Like build.yml, each arch builds natively and the build runs inside the
+# `nixos/nix` container via `docker run` (the whole job can't use `container:`
+# because that image lacks a glibc loader for GitHub's bundled Node, which
+# breaks every JS action). Bare `make <target>` resolves to the runner's native
+# currentSystem; the resulting ISO is copied out of the ephemeral container
+# store into a host mktemp dir. The release job gathers all ISOs and attaches
+# them (with sha256 checksums) to the release.
+
+name: Build and release ISO
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/publish (e.g. v1.2.0)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref/commit to build (defaults to the tag/branch)"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark the release as a pre-release"
+        required: false
+        default: false
+        type: boolean
+
+# Only one release run per tag at a time.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.kind }} (${{ matrix.system }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - kind: Installer
+            target: installer
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          - kind: Installer
+            target: installer
+            system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - kind: Appliance
+            target: appliance
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          - kind: Appliance
+            target: appliance
+            system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Empty for tag push (checks out the tag); honored for manual dispatch
+          # to release an arbitrary commit.
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: Build ISO
+        id: build
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          # Host /dist volume, bind-mounted into the container, where the build
+          # drops the finished ISO (the container's /nix/store is ephemeral, so
+          # the in-tree out/ symlink would dangle on the host — we dereference
+          # the built ISO into /dist instead).
+          dist="$(mktemp -d)"
+          echo "dist=$dist" >>"$GITHUB_OUTPUT"
+          outlink="out/$TARGET-iso/iso"
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            -v "$dist":/dist \
+            -e TARGET -e outlink="$outlink" \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              # gnumake provides "make"; git lets the Makefile stamp the rev. The
+              # ISO targets also emit out/<name>.iso.sha256 sidecar checksums so
+              # release consumers can verify the download. Bare target → native
+              # currentSystem (matrix pins the matching native runner).
+              nix-shell -p gnumake git --run "make $TARGET/iso"
+              # Dereference the build store symlink into the /dist volume,
+              # alongside the make-generated checksum sidecar.
+              cp -L "$outlink"/*.iso /dist/
+              cp out/*.iso.sha256 /dist/
+            '
+          ls -lh "$dist"
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-${{ matrix.target }}-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/*.iso
+          if-no-files-found: error
+
+      - name: Upload ISO checksum artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/*.iso.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "Releasing tag: $tag"
+
+      - name: Download built ISOs
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lhR dist/
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          files: |
+            dist/*.iso
+            dist/*.iso.sha256
+          fail_on_unmatched_files: true
