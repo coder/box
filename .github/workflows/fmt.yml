@@ -8,10 +8,10 @@
 # Splitting them means a formatting miss and a lint finding show up as distinct,
 # independently-rerunnable checks.
 #
-# Unlike the heavy image builds (test.yml / release.yml, which run inside the
-# nixos/nix container), these checks are light, so we just install Nix on the
-# runner with nix-installer-action (flakes enabled) and run `make` directly —
-# GNU Make is preinstalled on the GitHub Ubuntu runners.
+# Like the image builds (test.yml / release.yml), Nix is installed on the runner
+# with nix-installer-action (flakes enabled) and the /nix/store is cached across
+# runs (nix-community/cache-nix-action). `make` runs directly — GNU Make is
+# preinstalled on the GitHub Ubuntu runners.
 
 name: Code quality
 
@@ -37,6 +37,15 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # Formatting/linting tools (treefmt, statix, …) come from the flake;
+          # key on the lockfile + Nix sources so the tool closure is reused.
+          primary-key: nix-fmt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-fmt-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 2G
+
       # Check-only (`--ci`): fails with a diff if anything is unformatted. Does
       # NOT modify the tree — run `make fmt` locally to fix.
       - name: make fmt/check
@@ -51,6 +60,15 @@ jobs:
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # Same tool closure as the format job; key on the lockfile + Nix
+          # sources so it is reused across runs.
+          primary-key: nix-fmt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-fmt-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 2G
 
       # Check-only (`--ci`): fails with a diff (statix/deadnix) or findings
       # (shellcheck). Does NOT modify the tree.

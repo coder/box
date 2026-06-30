@@ -40,6 +40,20 @@
 NIX   ?= nix
 FLAKE ?= .
 
+# Build parallelism + substituter tuning, applied to every Nix invocation
+# (build and eval) via NIX_PERF_FLAGS below. max-jobs runs independent
+# derivations concurrently and cores=0 lets each build use all CPUs;
+# http-connections / max-substitution-jobs widen the binary-cache fetch
+# pipeline (Nix defaults 25 / 16) so restoring a large closure isn't the
+# bottleneck. Override per-invocation, e.g. `make installer/iso NIX_MAX_JOBS=4`.
+NIX_MAX_JOBS         ?= auto
+NIX_CORES            ?= 0
+NIX_HTTP_CONNECTIONS ?= 128
+NIX_MAX_SUBST_JOBS   ?= 32
+NIX_PERF_FLAGS = --max-jobs $(NIX_MAX_JOBS) --cores $(NIX_CORES) \
+  --option http-connections $(NIX_HTTP_CONNECTIONS) \
+  --option max-substitution-jobs $(NIX_MAX_SUBST_JOBS)
+
 # Build revision injected into images (installer boot menu, /etc/coder-box-rev).
 # We build through a path flakeref (getFlake (toString ./.)), which carries no
 # git metadata, so self.rev/dirtyRev are empty — compute the rev here and pass
@@ -59,6 +73,15 @@ GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet
 
 # Normalize an arch token to a *-linux triple: $(call norm_arch,aarch64) -> aarch64-linux
 norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
+
+# Optional squashfs compression override for ISO builds. Empty = the nixpkgs
+# default (zstd -Xcompression-level 19): maximum ratio, but the SLOWEST setting,
+# and it dominates ISO build time for the full GUI box. CI sets a fast level
+# (e.g. `make installer/iso ISO_COMPRESSION='zstd -Xcompression-level 3'`) to cut
+# build time at the cost of a slightly larger image; releases keep the default
+# so shipped ISOs stay small. Expands to the module field that box_iso injects.
+ISO_COMPRESSION ?=
+iso_comp_field = $(if $(ISO_COMPRESSION),isoImage.squashfsCompression = "$(ISO_COMPRESSION)";,)
 
 # Single build helper used by every target. extendModules lets us override
 # nixpkgs.hostPlatform (per-arch) and the disko image format from one recipe,
@@ -91,7 +114,7 @@ box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(
 
 define box_build
 	@mkdir -p out
-	$(NIX) build --impure --no-write-lock-file --print-out-paths \
+	$(NIX) build $(NIX_PERF_FLAGS) --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
@@ -125,20 +148,28 @@ endef
 # built output to anchor, and the .drv itself is a GC root until next gc.
 #   $(1) = host   $(2) = system.build.<attr>   $(3) = extra module fields   $(4) = arch token
 define box_instantiate
-	$(NIX) eval --impure --no-write-lock-file --raw --expr \
+	$(NIX) eval $(NIX_PERF_FLAGS) --impure --no-write-lock-file --raw --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2).drvPath'
 	@echo
 endef
 
-.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
+.PHONY: check installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
+
+# ── check — flake evaluation (cheap; builds nothing) ──────────────────────────
+# `nix flake check --no-build --all-systems` evaluates every flake output
+# (nixosConfigurations, packages, …) for all declared systems, catching typos /
+# bad references / type errors in seconds without realising anything. --impure
+# matches the box_* helpers (currentSystem + the CODER_BOX_PR_* env reads).
+check:
+	$(NIX) flake check $(NIX_PERF_FLAGS) --impure --no-build --all-systems
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 
 # ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
 installer/iso:
-	$(call box_iso,_installer-iso,isoImageDir,,)
+	$(call box_iso,_installer-iso,isoImageDir,$(iso_comp_field),)
 installer/iso/%:
-	$(call box_iso,_installer-iso,isoImageDir,,$*)
+	$(call box_iso,_installer-iso,isoImageDir,$(iso_comp_field),$*)
 
 # ── installer/drv — instantiate the installer ISO derivation (no build) ───────
 installer/drv:
@@ -148,9 +179,9 @@ installer/drv/%:
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance-iso) ───────────
 appliance/iso:
-	$(call box_iso,_appliance-iso,isoImageDir,,)
+	$(call box_iso,_appliance-iso,isoImageDir,$(iso_comp_field),)
 appliance/iso/%:
-	$(call box_iso,_appliance-iso,isoImageDir,,$*)
+	$(call box_iso,_appliance-iso,isoImageDir,$(iso_comp_field),$*)
 
 # ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
 appliance/drv:

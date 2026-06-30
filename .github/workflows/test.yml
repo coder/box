@@ -5,20 +5,14 @@
 # bad references / type errors surface fast; the matrix build jobs then realise
 # (or, drv-only, just instantiate) the images.
 #
-# Each arch builds on a native runner; the build itself runs inside the
-# official `nixos/nix` container via `docker run`. We deliberately do NOT put
-# the whole job in `container:` — the nixos/nix image lacks a standard glibc
-# loader, so GitHub's bundled Node can't run there and every JS action
-# (checkout, upload-artifact) fails with `exec .../node: no such file or
-# directory`. So checkout/upload run on the host runner and only `make` runs in
-# the container.
-#
-# One job per arch builds BOTH kinds in the SAME container (installer first,
-# appliance second). `make <kind>/iso` resolves to the runner's native
-# `builtins.currentSystem` and produces
-# out/<kind>-iso/iso/coder-box-<kind>-<arch>-linux.iso (+ a .sha256 sidecar);
-# the container /nix/store is ephemeral, so we dereference the ISOs into a host
-# /dist volume and upload from there.
+# Nix is installed natively on each runner (DeterminateSystems/nix-installer-
+# action) rather than run from the `nixos/nix` container — that container lacks
+# a standard glibc loader, so GitHub's bundled Node couldn't run there and JS
+# actions failed; installing on the host avoids that entirely and, crucially,
+# lets us cache the /nix/store across runs (nix-community/cache-nix-action,
+# backed by the GitHub Actions cache). Each arch builds on its own native
+# runner, so `make <kind>/iso` resolves to the runner's native
+# `builtins.currentSystem`.
 #
 # Triggers / what gets built per kind:
 #   * push to main                     → drv-only: just instantiate each kind's
@@ -66,10 +60,8 @@ jobs:
   # --all-systems` evaluates every flake output (nixosConfigurations, packages,
   # …) for all declared systems (x86_64 + aarch64), catching typos / bad
   # references / type errors in seconds. The per-kind ISO derivations are
-  # instantiated separately by the `iso` job below (its drv-only path), so this
-  # covers the flake outputs that path doesn't touch. Runs inside the nixos/nix
-  # container via `docker run` (that image lacks a glibc loader for GitHub's
-  # bundled Node, so the checkout JS action stays on the host runner).
+  # instantiated separately by the `Images` job below (its drv-only path), so
+  # this covers the flake outputs that path doesn't touch.
   flake:
     name: Flake eval
     runs-on: ubuntu-24.04
@@ -79,16 +71,21 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref }}
 
-      - name: nix flake check
-        run: |
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              nix flake check --impure --no-build --all-systems
-            '
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # Key on the lockfile + all Nix sources; restore the most recent
+          # arch-matching cache otherwise. Cap the saved store so a run can't
+          # blow past the repo's GitHub Actions cache budget.
+          primary-key: nix-flake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-flake-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 5G
+
+      - name: Flake check
+        run: make check
 
   # Tiny pre-job that decides, per kind, whether to build the full ISO or just
   # instantiate the derivation, and assembles a short human title for the build
@@ -167,11 +164,30 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # ISO closures are large; cap the saved store so a build can't blow
+          # past the repo's GitHub Actions cache budget (10G total).
+          primary-key: nix-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-images-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 8G
+
       # Per-kind plan (full ISO vs drv only) is in the job name; the run summary
       # below also records it. INSTALLER_FULL / APPLIANCE_FULL come from the
       # job-level env above.
       - name: Build images
         id: build
+        env:
+          # These are verification images, not shipped artifacts, so trade ISO
+          # size for build speed: a low squashfs compression level is far faster
+          # than the nixpkgs default (zstd level 19), which otherwise dominates
+          # the build — and the rev baked into /etc forces that recompress on
+          # every commit regardless of caching. Releases keep the slow default.
+          ISO_COMPRESSION: zstd -Xcompression-level 3
         run: |
           # Record the per-kind plan in the run summary for quick scanning.
           plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }
@@ -180,61 +196,45 @@ jobs:
             echo "- installer: $(plan "$INSTALLER_FULL")"
             echo "- appliance: $(plan "$APPLIANCE_FULL")"
           } >>"$GITHUB_STEP_SUMMARY"
-          # Host /dist volume, bind-mounted into the container, where full builds
-          # drop the finished ISO + checksum (the container's /nix/store is
-          # ephemeral, so the in-tree out/ symlink would dangle on the host).
+
+          # Nix is on the host now, so make/git (preinstalled on the runner)
+          # build straight into the host /nix/store — no container. A full build
+          # → make <kind>/iso, then dereference the image + its .sha256 sidecar
+          # (colocated in out/<kind>-iso/iso) into a real dir for upload; a
+          # drv-only kind just instantiates. Bare target → native currentSystem.
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          # Both kinds run in ONE container; installer first, appliance later.
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            -v "$dist":/dist \
-            -e INSTALLER_FULL -e APPLIANCE_FULL -e CODER_BOX_PR_TITLE -e CODER_BOX_PR_NUMBER \
-            nixos/nix:latest \
-            sh -euc '
-              # The Makefile builds via "nix build --impure" and needs flakes +
-              # nix-command, which the nixos/nix image does not enable by default.
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              # Repo is bind-mounted and owned by a different uid; allow git to
-              # read it so the Makefile can stamp the build rev.
-              git config --global --add safe.directory /work
-
-              # full build → realise the ISO; make puts the image (symlink) and
-              # its .sha256 sidecar together in out/<kind>-iso/iso, so a single
-              # cp -L grabs both into /dist. Otherwise just instantiate the
-              # derivation. Bare target → native currentSystem (matrix pins the
-              # runner arch). gnumake provides "make"; git stamps the build rev.
-              build_kind() {
-                kind="$1"; full="$2"
-                if [ "$full" = "true" ]; then
-                  nix-shell -p gnumake git --run "make $kind/iso"
-                  cp -L "out/$kind-iso/iso"/* /dist/
-                else
-                  nix-shell -p gnumake git --run "make $kind/drv"
-                fi
-              }
-
-              build_kind installer "$INSTALLER_FULL"
-              build_kind appliance "$APPLIANCE_FULL"
-            '
+          # Nix is on the host (make/git preinstalled on the runner) so the
+          # build goes straight into the host /nix/store — no container. The
+          # job-level CODER_BOX_PR_TITLE / CODER_BOX_PR_NUMBER env is inherited
+          # by make directly (read under --impure for the pretty version name).
+          build_kind() {
+            kind="$1"; full="$2"
+            if [ "$full" = "true" ]; then
+              make "$kind/iso"
+              cp -L "out/$kind-iso/iso"/* "$dist/"
+            else
+              make "$kind/drv"
+            fi
+          }
+          build_kind installer "$INSTALLER_FULL"
+          build_kind appliance "$APPLIANCE_FULL"
           ls -lh "$dist"
 
+      # One artifact per kind, each bundling that kind's ISO with its .sha256
+      # sidecar (a single upload-artifact step uploads its matched files
+      # CONCURRENTLY, so the multi-GB ISO and its checksum go up together).
+      # Installer and appliance stay in SEPARATE artifacts so each kind can be
+      # downloaded on its own. Each step runs only when its kind built full.
       - name: Upload installer ISO artifact
         if: env.INSTALLER_FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-installer-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
+          path: |
+            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
+            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
           # Verification build; keep storage cost minimal.
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Upload installer checksum artifact
-        if: env.INSTALLER_FULL == 'true'
-        uses: actions/upload-artifact@v5
-        with:
-          name: coder-box-installer-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
 
@@ -243,15 +243,8 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-appliance-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Upload appliance checksum artifact
-        if: env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v5
-        with:
-          name: coder-box-appliance-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
+          path: |
+            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
+            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
