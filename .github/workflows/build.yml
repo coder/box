@@ -62,17 +62,21 @@ jobs:
     #   Build installer & appliance DRV (aarch64-linux)  # both drv-only
     # and when they differ it spells out each, e.g.
     #   Build installer ISO + appliance DRV (x86_64-linux)
+    # HACK: the literal "Build" prefix is OUTSIDE the ${{ }} expression on
+    # purpose, so the very first thing you see is "Build" even before GitHub
+    # interpolates the name (e.g. the raw "Matrix:" preview, or a skipped job,
+    # which shows the un-evaluated expression).
     # NOTE: the `env` context is not available in a job name, so the label/draft
     # checks are inlined here — they mirror INSTALLER_FULL/APPLIANCE_FULL below.
     name: >-
-      ${{ (
+      Build ${{ (
             (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')))
             == (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')))
           )
-          && format('Build installer & appliance {0} ({1})',
+          && format('installer & appliance {0} ({1})',
                (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
                matrix.system)
-          || format('Build installer {0} + appliance {1} ({2})',
+          || format('installer {0} + appliance {1} ({2})',
                (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
                (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))) && 'ISO' || 'DRV',
                matrix.system) }}
