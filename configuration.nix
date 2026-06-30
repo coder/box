@@ -42,6 +42,26 @@ let
       }
     }
   '';
+
+  # Session-startup launcher: open the local Coder dashboard in Firefox.
+  # Wired up as an XDG autostart entry (see environment.etc below) on the
+  # INSTALLED box only — the installer ISO disables it (installer/iso.nix), and
+  # its coder-redirect/coder services are off there anyway. coder-redirect binds
+  # :80 only AFTER it has discovered the *.try.coder.app tunnel URL and serves a
+  # 302 to it, so opening http://127.0.0.1 before then would just show a
+  # connection-refused page. Poll :80 (up to ~2 min) before launching so the
+  # first paint is the dashboard, not an error. `firefox` resolves from the
+  # session PATH (the wrapped build that programs.firefox.enable installs).
+  openDashboard = pkgs.writeShellScript "coder-box-open-dashboard" ''
+    export PATH=/run/current-system/sw/bin:$PATH
+    for _ in $(seq 1 60); do
+      if ${pkgs.curl}/bin/curl -s -o /dev/null --max-time 2 http://127.0.0.1; then
+        break
+      fi
+      sleep 2
+    done
+    exec firefox http://127.0.0.1
+  '';
 in
 {
   # Per-host modules (hardware detection via facter, disk layout via disko,
@@ -141,7 +161,7 @@ in
     # LAN and a *.try.coder.app tunnel. Suspending or hibernating drops the
     # NIC, so the machine silently falls off the network (no mDNS, no SSH,
     # tunnel dies) until someone physically wakes it. The shipped image runs a
-    # KDE desktop, which exposes Sleep/Hibernate actions, and a stray
+    # GNOME desktop, which exposes Sleep/Hibernate actions, and a stray
     # `systemctl suspend` / `systemctl hibernate` (or the matching D-Bus call)
     # would do the same. Mask the suspend, hibernate, and hybrid-sleep targets
     # so all of those paths become a no-op.
@@ -199,16 +219,77 @@ in
       LC_TIME = "en_US.UTF-8";
     };
 
-    # ── Desktop: KDE Plasma 6 ─────────────────────────────────────────────────
+    # ── Desktop: GNOME ────────────────────────────────────────────────────────
+    # GNOME 49 (the version in the pinned nixpkgs-25.11) is Wayland-only: the
+    # GNOME-on-Xorg session was dropped upstream (gnome-session now advertises
+    # `providedSessions = [ "gnome" ]` — no `gnome-xorg`), so there is no X11
+    # GNOME session to fall back to. GDM runs on Wayland by default and we keep
+    # it that way; there is therefore no `defaultSession`/`wayland.enable`
+    # plumbing as the SDDM/Plasma config (KDE Plasma 6 on Xorg) had before it.
+    # `services.xserver.enable` is still set so XWayland is available for legacy
+    # X11 clients (e.g. the optional ScreenConnect agent — see screenconnect.nix).
     services.xserver.enable = true;
-    services.displayManager.sddm.enable = true;
-    services.displayManager.sddm.wayland.enable = false;
-    services.displayManager.defaultSession = "plasmax11";
-    services.desktopManager.plasma6.enable = true;
+    services.displayManager.gdm.enable = true;
+    services.desktopManager.gnome.enable = true;
     services.xserver.xkb = {
       layout = "us";
       variant = "";
     };
+
+    # ── Skip GNOME's first-run welcome experience ─────────────────────────────
+    # Out of the box GNOME greets every new login with two things this appliance
+    # doesn't want:
+    #   1. gnome-tour — the "Welcome to NixOS / Take the Tour" dialog. GNOME
+    #      Shell auto-launches it from its .desktop file on first login (it ships
+    #      in the default GNOME package set), so the only way to suppress it is to
+    #      drop the package via environment.gnome.excludePackages.
+    #   2. The Activities overview (the app/window grid) shown at session
+    #      startup. GNOME has no gsetting to disable this, so we ship the
+    #      "no-overview" Shell extension and enable it for the session, which
+    #      lands you on the bare desktop instead of the overview.
+    # (the no-overview extension package is added to environment.systemPackages
+    # in the shared package list below.)
+    environment.gnome.excludePackages = [ pkgs.gnome-tour ];
+    programs.dconf.profiles.user.databases = [
+      {
+        settings = {
+          "org/gnome/shell".enabled-extensions = [ "no-overview@fthx" ];
+
+          # ── Pinned dash icons: match the old KDE Plasma 6 taskbar ───────────
+          # Plasma 6 shipped its Icons-Only Task Manager pre-pinned with three
+          # launchers: System Settings, the file manager (Dolphin), and the web
+          # browser (Firefox). Reproduce that exact set as the GNOME dash
+          # favourites so the box looks the same after the KDE→GNOME switch.
+          # GNOME's own NixOS default (Epiphany/Geary/Calendar/Music/Nautilus)
+          # is mostly apps we don't even install, so override it outright.
+          #   System Settings → org.gnome.Settings  (gnome-control-center)
+          #   Dolphin         → org.gnome.Nautilus  (GNOME Files)
+          #   Firefox         → firefox
+          "org/gnome/shell".favorite-apps = [
+            "org.gnome.Settings.desktop"
+            "org.gnome.Nautilus.desktop"
+            "firefox.desktop"
+          ];
+        };
+      }
+    ];
+
+    # ── Open the Coder dashboard on login ──────────────────────────────────────
+    # On the installed box the coderbox user autologins into GNOME; open Firefox
+    # on http://127.0.0.1 (the local coder-redirect → tunnel URL) at session
+    # start so the dashboard is up and ready. See openDashboard in the let block
+    # for the wait-for-:80 logic. The installer ISO overrides this away
+    # (installer/iso.nix) since it has no running Coder stack.
+    environment.etc."xdg/autostart/coder-box-open-dashboard.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Open Coder Dashboard
+      Comment=Open the local Coder dashboard in Firefox on login
+      Exec=${openDashboard}
+      Terminal=false
+      X-GNOME-Autostart-enabled=true
+      OnlyShowIn=GNOME;
+    '';
 
     # ── Audio ─────────────────────────────────────────────────────────────────
     services.pulseaudio.enable = false;
@@ -301,6 +382,9 @@ in
       terraform
       gh
       vlc
+      # GNOME Shell extension that suppresses the Activities overview shown at
+      # session startup (enabled via programs.dconf above). See the Desktop block.
+      gnomeExtensions.no-overview
     ];
 
     nix.settings.experimental-features = [

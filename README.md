@@ -75,7 +75,7 @@ The installer generates `hosts/<hostname>/{default.nix,local.nix,facter.json}`, 
 ## Prebuilt images (The Box™ without `install.sh`)
 
 Sometimes you don't want to run the installer; you just want The Box™. Two
-image flavours build the *exact same* configured system — KDE Plasma, the Coder
+image flavours build the *exact same* configured system — GNOME, the Coder
 server, k3s, Podman, the bundled templates — with admin bootstrap and template
 deploy happening on boot just like a real install. Neither is an installer.
 

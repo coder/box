@@ -8,7 +8,7 @@
 #     agents, virtio drivers, auto-resize, systemd-boot).
 #   - Switches networking to systemd-networkd + DHCP on enp5s0 (the
 #     virtio NIC Incus assigns to VMs on both x86_64 and aarch64).
-#   - Disables the full desktop stack (KDE, PipeWire, printing, Avahi)
+#   - Disables the full desktop stack (GNOME, PipeWire, printing, Avahi)
 #     that configuration.nix enables by default — a headless VM only needs
 #     the Coder server + PostgreSQL.
 #
@@ -50,8 +50,8 @@
   # The full desktop stack from configuration.nix is not needed in a VM.
   # Use lib.mkForce to win against the lib.mkDefault values set there.
   services.xserver.enable = lib.mkForce false;
-  services.displayManager.sddm.enable = lib.mkForce false;
-  services.desktopManager.plasma6.enable = lib.mkForce false;
+  services.displayManager.gdm.enable = lib.mkForce false;
+  services.desktopManager.gnome.enable = lib.mkForce false;
   services.pipewire.enable = lib.mkForce false;
   services.pulseaudio.enable = lib.mkForce false;
   security.rtkit.enable = lib.mkForce false;

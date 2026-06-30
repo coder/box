@@ -2,7 +2,7 @@
 #
 # Turns the shared Coder box configuration into a bootable *ephemeral* appliance
 # ISO that runs entirely from the USB/CD + RAM, with no disk install. Booting it
-# gives the same system the on-disk install produces (KDE, Coder server, k3s,
+# gives the same system the on-disk install produces (GNOME, Coder server, k3s,
 # Podman, the bundled templates, all started automatically) — but the root
 # filesystem is a squashfs + tmpfs overlay, so all state is discarded on
 # reboot. For a *persistent* appliance (state survives reboots) build the

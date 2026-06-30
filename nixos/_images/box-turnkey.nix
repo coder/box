@@ -173,7 +173,7 @@ in
     nix.registry.nixpkgs.flake = inputs.nixpkgs;
 
     # ── Login + Coder admin bootstrap ────────────────────────────────────────────
-    # Autologin drops straight into the Plasma desktop, mirroring a
+    # Autologin drops straight into the GNOME desktop, mirroring a
     # freshly-installed, configured box.
     services.displayManager.autoLogin = {
       enable = true;
@@ -187,7 +187,7 @@ in
         "networkmanager"
         "wheel"
       ];
-      packages = [ pkgs.kdePackages.kate ];
+      packages = [ pkgs.gnome-text-editor ];
       initialPassword = "PleaseChangeMe1234";
     };
 

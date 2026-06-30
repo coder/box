@@ -28,7 +28,7 @@ let
   # Short form for the boot-menu label (full 40-char hashes are unwieldy there).
   boxRevShort = if boxRev == "unknown" then "unknown" else builtins.substring 0 12 boxRev;
 
-  # Launcher run inside the preopened Konsole: cd into the baked repo, run the
+  # Launcher run inside the preopened terminal: cd into the baked repo, run the
   # installer as root (passwordless sudo is configured in configuration.nix),
   # and — whatever happens — drop the user into an interactive bash shell so a
   # failed install leaves them at a prompt to inspect/retry instead of a dead
@@ -55,7 +55,7 @@ let
     fi
     echo
     # Interactive login-ish shell so the user can debug/retry. exec so closing
-    # the shell closes Konsole.
+    # the shell closes the terminal window.
     exec ${pkgs.bashInteractive}/bin/bash -i
   '';
 in
@@ -94,33 +94,46 @@ in
     # build (e.g. coder-box-installer-x86_64-linux-pr-fix-the-thing.iso).
     image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}${config.coderBox.prFileSuffix}";
 
-    # ── Auto-launch a full-screen Konsole that runs the installer ──────────────
-    # box-turnkey.nix autologins straight into the Plasma (X11) desktop. For the
-    # installer we want the install to start on its own: a system-wide XDG
-    # autostart entry opens Konsole full-screen on session start and runs the
-    # installer launcher (`konsole -e <launcher>`), which `sudo ./install.sh`s
-    # and drops to an interactive bash shell if it fails.
-    environment.systemPackages = [ pkgs.kdePackages.konsole ];
-    environment.etc."xdg/autostart/coder-box-installer-konsole.desktop".text = ''
+    # ── Auto-launch a full-screen terminal that runs the installer ─────────────
+    # box-turnkey.nix autologins straight into the GNOME (Wayland) desktop. For
+    # the installer we want the install to start on its own: a system-wide XDG
+    # autostart entry opens GNOME Terminal full-screen on session start and runs
+    # the installer launcher (`gnome-terminal -- <launcher>`), which
+    # `sudo ./install.sh`s and drops to an interactive bash shell if it fails.
+    environment.systemPackages = [ pkgs.gnome-terminal ];
+    environment.etc."xdg/autostart/coder-box-installer-terminal.desktop".text = ''
       [Desktop Entry]
       Type=Application
       Name=Coder Box Installer Console
       Comment=Run the coder/box installer in a full-screen terminal
-      Exec=${pkgs.kdePackages.konsole}/bin/konsole --fullscreen --workdir /etc/nixos-repo -e ${installerLauncher}
+      Exec=${pkgs.gnome-terminal}/bin/gnome-terminal --full-screen --working-directory=/etc/nixos-repo -- ${installerLauncher}
       Terminal=false
       X-GNOME-Autostart-enabled=true
-      OnlyShowIn=KDE;
+      OnlyShowIn=GNOME;
     '';
+
+    # The installed box autostarts Firefox on the Coder dashboard
+    # (configuration.nix → coder-box-open-dashboard.desktop). The installer has
+    # no running Coder stack (coder/coder-redirect are disabled below), so drop
+    # that autostart here — the installer session should only run the installer
+    # console above.
+    environment.etc."xdg/autostart/coder-box-open-dashboard.desktop".enable = lib.mkForce false;
 
     # ── Never prompt for a password to get in ──────────────────────────────────
     # Login is already passwordless (box-turnkey coderbox autologin + passwordless
-    # sudo). Disable KDE's screen locker (idle auto-lock / lock-on-resume) so the
-    # installer is never locked. (The appliance keeps the default locker.)
-    environment.etc."xdg/kscreenlockerrc".text = ''
-      [Daemon]
-      Autolock=false
-      LockOnResume=false
-    '';
+    # sudo). Disable GNOME's screen lock / idle blanking (idle auto-lock and the
+    # idle-delay screensaver) so the installer is never locked or blanked mid
+    # install. Shipped as a system dconf default for the autologin user. (The
+    # appliance keeps the default locker.)
+    programs.dconf.profiles.user.databases = [
+      {
+        settings = {
+          "org/gnome/desktop/screensaver".lock-enabled = false;
+          "org/gnome/desktop/session".idle-delay = lib.gvariant.mkUint32 0;
+          "org/gnome/settings-daemon/plugins/power".sleep-inactive-ac-type = "nothing";
+        };
+      }
+    ];
 
     # ── Installer ergonomics ───────────────────────────────────────────────────
     # `sudo ./install.sh` from the baked /etc/nixos-repo works because the script

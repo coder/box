@@ -767,7 +767,7 @@ ln -sf /etc/nixos-repo/flake.nix /mnt/etc/nixos/flake.nix
 #     wrong path) and the chroot `activate` fails: "No such file or directory".
 #     (NOTE: the target host is `coder-nixos`, a *different* system than the
 #     image's own host, so its toplevel isn't pre-realised — it must be built.
-#     The build is cheap: every heavy dependency (KDE, Coder, k3s, …) is reused
+#     The build is cheap: every heavy dependency (GNOME, Coder, k3s, …) is reused
 #     from the squashfs; only the few host-specific derivations are new.)
 #
 #     So: build the toplevel, copy its full closure into /mnt with

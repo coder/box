@@ -216,14 +216,25 @@ in
             echo "screenconnect: init script not found at /etc/init.d/connectwisecontrol-*" >&2
             exit 1
           fi
-          # Find the xauth cookie file for the running Xorg session.
-          # The filename is randomised by SDDM on each boot.
-          XAUTH=$(ls /run/sddm/xauth_* 2>/dev/null | head -1)
+          # Find the xauth cookie file for the running X session so the agent can
+          # reach DISPLAY=:0. The box now runs GNOME on Wayland (GDM); DISPLAY=:0
+          # is served by XWayland, whose cookie mutter writes to the user's
+          # runtime dir as .mutter-Xwaylandauth.* . Fall back to GDM's own
+          # Xauthority, then to the legacy SDDM path (KDE/Plasma Xorg) for older
+          # images. The filename is randomised on every boot, so glob for it.
+          #
+          # NOTE: under Wayland XWayland exposes X11 *clients*, but ScreenConnect
+          # cannot screen-capture the Wayland compositor through it. Capturing the
+          # GNOME session needs a Wayland-aware path (e.g. PipeWire/portal); this
+          # lookup keeps the agent reachable but remote view may be limited.
+          XAUTH=$(ls /run/user/*/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
+          [ -z "$XAUTH" ] && XAUTH=$(ls /run/user/*/gdm/Xauthority 2>/dev/null | head -1)
+          [ -z "$XAUTH" ] && XAUTH=$(ls /run/sddm/xauth_* 2>/dev/null | head -1)
           if [ -n "$XAUTH" ]; then
             export XAUTHORITY="$XAUTH"
             echo "screenconnect: using XAUTHORITY=$XAUTH"
           else
-            echo "screenconnect: warning: no xauth file found in /run/sddm/"
+            echo "screenconnect: warning: no xauth file found (looked in /run/user/*/{.mutter-Xwaylandauth.*,gdm/Xauthority}, /run/sddm/)"
           fi
           exec "$INIT" start
         '';
