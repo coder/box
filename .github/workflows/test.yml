@@ -5,13 +5,14 @@
 # bad references / type errors surface fast; the matrix build jobs then realise
 # (or, drv-only, just instantiate) the images.
 #
-# Nix is installed natively on each runner (cachix/install-nix-action) rather
-# than run from the `nixos/nix` container — that container lacks a standard
-# glibc loader, so GitHub's bundled Node couldn't run there and JS actions
-# failed; installing on the host avoids that entirely and, crucially, lets us
-# cache the /nix/store across runs (nix-community/cache-nix-action, backed by
-# the GitHub Actions cache). Each arch builds on its own native runner, so
-# `make <kind>/iso` resolves to the runner's native `builtins.currentSystem`.
+# Nix is installed natively on each runner (DeterminateSystems/nix-installer-
+# action) rather than run from the `nixos/nix` container — that container lacks
+# a standard glibc loader, so GitHub's bundled Node couldn't run there and JS
+# actions failed; installing on the host avoids that entirely and, crucially,
+# lets us cache the /nix/store across runs (nix-community/cache-nix-action,
+# backed by the GitHub Actions cache). Each arch builds on its own native
+# runner, so `make <kind>/iso` resolves to the runner's native
+# `builtins.currentSystem`.
 #
 # Triggers / what gets built per kind:
 #   * push to main                     → drv-only: just instantiate each kind's
@@ -71,10 +72,7 @@ jobs:
           ref: ${{ github.event.inputs.ref }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+        uses: DeterminateSystems/nix-installer-action@main
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6
@@ -167,10 +165,7 @@ jobs:
           ref: ${{ github.event.inputs.ref }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+        uses: DeterminateSystems/nix-installer-action@main
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6

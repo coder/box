@@ -7,8 +7,9 @@
 #     and optionally a ref/commit to build.
 #
 # Like test.yml, each arch builds on its own native runner with Nix installed
-# directly on the host (cachix/install-nix-action) and the /nix/store cached
-# across runs (nix-community/cache-nix-action). Bare `make <target>` resolves to
+# directly on the host (DeterminateSystems/nix-installer-action) and the
+# /nix/store cached across runs (nix-community/cache-nix-action). Bare
+# `make <target>` resolves to
 # the runner's native currentSystem; the resulting ISO + its .sha256 sidecar are
 # dereferenced into a host mktemp dir. The release job gathers all ISOs and
 # attaches them (with sha256 checksums) to the release.
@@ -72,10 +73,7 @@ jobs:
           ref: ${{ github.event.inputs.ref }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+        uses: DeterminateSystems/nix-installer-action@main
 
       - name: Cache Nix store
         uses: nix-community/cache-nix-action@v6
