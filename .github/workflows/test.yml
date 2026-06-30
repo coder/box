@@ -352,10 +352,7 @@ jobs:
               while (n >= 1024 && i < u.length - 1) { n /= 1024; i += 1; }
               return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
             };
-            const prettyArch = (s) => ({
-              'x86_64-linux': 'x86_64',
-              'aarch64-linux': 'aarch64',
-            }[s] || s);
+            const prettyArch = (s) => s.replace(/-linux$/, '');
             const kindOf = (file) => file.includes('-installer-')
               ? { slug: 'installer', icon: '🛠️', label: 'Installer' }
               : { slug: 'appliance', icon: '📦', label: 'Appliance' };
