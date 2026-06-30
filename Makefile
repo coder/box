@@ -153,7 +153,15 @@ define box_instantiate
 	@echo
 endef
 
-.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
+.PHONY: check installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
+
+# ── check — flake evaluation (cheap; builds nothing) ──────────────────────────
+# `nix flake check --no-build --all-systems` evaluates every flake output
+# (nixosConfigurations, packages, …) for all declared systems, catching typos /
+# bad references / type errors in seconds without realising anything. --impure
+# matches the box_* helpers (currentSystem + the CODER_BOX_PR_* env reads).
+check:
+	$(NIX) flake check $(NIX_PERF_FLAGS) --impure --no-build --all-systems
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 

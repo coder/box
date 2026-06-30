@@ -84,8 +84,8 @@ jobs:
           restore-prefixes-first-match: nix-flake-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size-linux: 5G
 
-      - name: nix flake check
-        run: nix flake check --impure --no-build --all-systems
+      - name: Flake check
+        run: make check
 
   # Tiny pre-job that decides, per kind, whether to build the full ISO or just
   # instantiate the derivation, and assembles a short human title for the build
@@ -221,22 +221,20 @@ jobs:
           build_kind appliance "$APPLIANCE_FULL"
           ls -lh "$dist"
 
+      # One artifact per kind, each bundling that kind's ISO with its .sha256
+      # sidecar (a single upload-artifact step uploads its matched files
+      # CONCURRENTLY, so the multi-GB ISO and its checksum go up together).
+      # Installer and appliance stay in SEPARATE artifacts so each kind can be
+      # downloaded on its own. Each step runs only when its kind built full.
       - name: Upload installer ISO artifact
         if: env.INSTALLER_FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-installer-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
+          path: |
+            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
+            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
           # Verification build; keep storage cost minimal.
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Upload installer checksum artifact
-        if: env.INSTALLER_FULL == 'true'
-        uses: actions/upload-artifact@v5
-        with:
-          name: coder-box-installer-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
 
@@ -245,15 +243,8 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: coder-box-appliance-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Upload appliance checksum artifact
-        if: env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v5
-        with:
-          name: coder-box-appliance-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
+          path: |
+            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
+            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
