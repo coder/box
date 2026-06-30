@@ -8,11 +8,10 @@
 # Splitting them means a formatting miss and a lint finding show up as distinct,
 # independently-rerunnable checks.
 #
-# Like the other workflows (see test.yml), the actual Nix command runs inside
-# the `nixos/nix` container via `docker run` — that image lacks a glibc loader
-# for GitHub's bundled Node, so JS actions (checkout) stay on the host runner
-# and only `nix` runs in the container. gnumake provides `make`; git lets the
-# flake resolve the bind-mounted (foreign-uid) tree.
+# Unlike the heavy image builds (test.yml / release.yml, which run inside the
+# nixos/nix container), these checks are light, so we just install Nix on the
+# runner with nix-installer-action (flakes enabled) and run `make` directly —
+# GNU Make is preinstalled on the GitHub Ubuntu runners.
 
 name: Format & lint
 
@@ -35,18 +34,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # Check-only (`--ci`): fails with a diff if anything is unformatted. Does
+      # NOT modify the tree — run `make fmt` locally to fix.
       - name: make fmt/check
-        run: |
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              # Check-only (`--ci`): fails with a diff if anything is unformatted.
-              # Does NOT modify the tree — run `make fmt` locally to fix.
-              nix-shell -p gnumake git --run "make fmt/check"
-            '
+        run: make fmt/check
 
   lint:
     name: Lint (statix, deadnix, shellcheck)
@@ -55,15 +49,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # Check-only (`--ci`): fails with a diff (statix/deadnix) or findings
+      # (shellcheck). Does NOT modify the tree.
       - name: make lint
-        run: |
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              # Check-only (`--ci`): fails with a diff (statix/deadnix) or
-              # findings (shellcheck). Does NOT modify the tree.
-              nix-shell -p gnumake git --run "make lint"
-            '
+        run: make lint
