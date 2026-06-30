@@ -40,6 +40,14 @@ concurrency:
   group: release-${{ github.event.inputs.tag || github.ref }}
   cancel-in-progress: false
 
+env:
+  # Force plain, greppable Nix output in CI logs. Nix's default animated
+  # multi-line progress bar renders as unreadable ANSI redraw noise in the
+  # GitHub Actions log viewer; `--log-format raw` prints one line per event and
+  # `--print-build-logs` streams the actual builder output. The Makefile passes
+  # $(NIX_OUTPUT_FLAGS) to every nix invocation (build / eval / flake check).
+  NIX_OUTPUT_FLAGS: --log-format raw --print-build-logs
+
 jobs:
   build:
     name: ${{ matrix.kind }} (${{ matrix.system }})
@@ -102,14 +110,14 @@ jobs:
           ls -lh "$dist"
 
       - name: Upload ISO artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}
           path: ${{ steps.build.outputs.dist }}/*.iso
           if-no-files-found: error
 
       - name: Upload ISO checksum artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
           path: ${{ steps.build.outputs.dist }}/*.iso.sha256
@@ -134,7 +142,7 @@ jobs:
           echo "Releasing tag: $tag"
 
       - name: Download built ISOs
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true

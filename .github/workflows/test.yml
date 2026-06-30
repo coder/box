@@ -55,6 +55,14 @@ concurrency:
   group: build-${{ github.ref }}-${{ github.event.inputs.ref }}
   cancel-in-progress: true
 
+env:
+  # Force plain, greppable Nix output in CI logs. Nix's default animated
+  # multi-line progress bar renders as unreadable ANSI redraw noise in the
+  # GitHub Actions log viewer; `--log-format raw` prints one line per event and
+  # `--print-build-logs` streams the actual builder output. The Makefile passes
+  # $(NIX_OUTPUT_FLAGS) to every nix invocation (build / eval / flake check).
+  NIX_OUTPUT_FLAGS: --log-format raw --print-build-logs
+
 jobs:
   # Flake evaluation — cheap, builds nothing. `nix flake check --no-build
   # --all-systems` evaluates every flake output (nixosConfigurations, packages,
@@ -228,7 +236,7 @@ jobs:
       # downloaded on its own. Each step runs only when its kind built full.
       - name: Upload installer ISO artifact
         if: env.INSTALLER_FULL == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coder-box-installer-${{ matrix.system }}
           path: |
@@ -240,7 +248,7 @@ jobs:
 
       - name: Upload appliance ISO artifact
         if: env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: coder-box-appliance-${{ matrix.system }}
           path: |
