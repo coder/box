@@ -13,6 +13,7 @@
 # override per-image via hosts/<host>/local.nix.
 
 {
+  config,
   lib,
   pkgs,
   self,
@@ -20,6 +21,51 @@
   ...
 }:
 
+let
+  # ── Pretty version name helpers ──────────────────────────────────────────────
+  # The "pretty version name" is the human-facing identity woven into the boot
+  # menu label and the ISO file name. For a PR preview build CI injects the PR
+  # title (coderBox.prTitle); when present it is appended so reviewers can tell
+  # at a glance which PR an image came from. Empty for tag/main/local builds.
+  inherit (config.coderBox) prTitle;
+
+  # Boot-menu form: keep the raw title but neutralise the few characters that
+  # would break the generated isolinux/grub menu (quotes, backslashes, newlines).
+  menuTitle = builtins.replaceStrings [ "\n" "\"" "\\" ] [ " " "'" "" ] prTitle;
+
+  # File-name form: lowercase the title and reduce it to a [a-z0-9-] slug so the
+  # ISO name stays portable. Collapse dash runs, trim edges, and cap the length
+  # so the file name doesn't balloon for a long PR title.
+  slugify =
+    title:
+    let
+      lower = lib.toLower title;
+      safe = lib.concatMapStrings (c: if builtins.match "[a-z0-9]" c != null then c else "-") (
+        lib.stringToCharacters lower
+      );
+      collapse =
+        s:
+        let
+          r = builtins.replaceStrings [ "--" ] [ "-" ] s;
+        in
+        if r == s then s else collapse r;
+      capped =
+        let
+          c = collapse safe;
+        in
+        if builtins.stringLength c > 40 then builtins.substring 0 40 c else c;
+    in
+    lib.removeSuffix "-" (lib.removePrefix "-" capped);
+
+  prSlug = slugify prTitle;
+
+  # PR number (the GitHub PR "ID"). CI injects it alongside the title; included
+  # in both the menu label ("#46") and the file name ("-46") when present so an
+  # image can be traced straight back to its PR. Empty for non-PR builds.
+  inherit (config.coderBox) prNumber;
+  prNumMenu = lib.optionalString (prNumber != "") " #${prNumber}";
+  prNumFile = lib.optionalString (prNumber != "") "-${prNumber}";
+in
 {
   imports = [
     # Broad driver/firmware set so the image boots on arbitrary hardware /
@@ -44,6 +90,46 @@
     type = lib.types.str;
     default = self.rev or self.dirtyRev or "unknown";
     description = "Git revision this Coder box image was built from.";
+  };
+
+  # PR title for a pull-request preview build. CI sets it via the
+  # CODER_BOX_PR_TITLE environment variable (read here under `--impure`, which
+  # every image build already uses), so an arbitrary title never has to be
+  # shell-escaped into a Nix expression. getEnv returns "" in pure eval / when
+  # unset, so non-PR builds (tags, main, local `nix build`) leave the pretty
+  # version name untouched.
+  options.coderBox.prTitle = lib.mkOption {
+    type = lib.types.str;
+    default = builtins.getEnv "CODER_BOX_PR_TITLE";
+    description = "Pull-request title this image was built for, woven into the pretty version name (boot-menu label + ISO file name) when non-empty.";
+  };
+
+  # PR number (GitHub PR "ID") for a pull-request preview build. CI sets it via
+  # CODER_BOX_PR_NUMBER (read under `--impure` like prTitle); empty otherwise.
+  options.coderBox.prNumber = lib.mkOption {
+    type = lib.types.str;
+    default = builtins.getEnv "CODER_BOX_PR_NUMBER";
+    description = "Pull-request number (ID) this image was built for, woven into the pretty version name when non-empty.";
+  };
+
+  # Derived, read-only fragments so every image flavour appends the PR identity
+  # the same way. coderBox.prMenuSuffix goes on the boot-menu label;
+  # coderBox.prFileSuffix goes on the ISO file name. Both carry the PR number
+  # ("#46" / "-46") when known, and are empty when there's no PR title, so
+  # they're safe to interpolate unconditionally.
+  options.coderBox.prMenuSuffix = lib.mkOption {
+    type = lib.types.str;
+    internal = true;
+    readOnly = true;
+    default = lib.optionalString (prTitle != "") " - PR${prNumMenu}: ${menuTitle}";
+    description = "Boot-menu label fragment naming the PR this image was built for (empty for non-PR builds).";
+  };
+  options.coderBox.prFileSuffix = lib.mkOption {
+    type = lib.types.str;
+    internal = true;
+    readOnly = true;
+    default = lib.optionalString (prSlug != "") "-pr${prNumFile}-${prSlug}";
+    description = "ISO file-name fragment naming the PR this image was built for (empty for non-PR builds).";
   };
 
   config = {

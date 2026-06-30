@@ -144,6 +144,13 @@ jobs:
       # Resolved per-kind plan from the `plan` job. Steps below branch on these.
       INSTALLER_FULL: ${{ needs.plan.outputs.installer_full }}
       APPLIANCE_FULL: ${{ needs.plan.outputs.appliance_full }}
+      # PR title + number woven into the image's pretty version name (boot-menu
+      # label + ISO file name) via coderBox.prTitle / coderBox.prNumber. Set
+      # through `env:` (not inlined into a run script) so an arbitrary title
+      # can't break the shell, and empty for non-PR events so tag/main builds
+      # keep their plain names.
+      CODER_BOX_PR_TITLE: ${{ github.event.pull_request.title }}
+      CODER_BOX_PR_NUMBER: ${{ github.event.pull_request.number }}
     strategy:
       fail-fast: false
       matrix:
@@ -182,7 +189,7 @@ jobs:
           docker run --rm \
             -v "$PWD":/work -w /work \
             -v "$dist":/dist \
-            -e INSTALLER_FULL -e APPLIANCE_FULL \
+            -e INSTALLER_FULL -e APPLIANCE_FULL -e CODER_BOX_PR_TITLE -e CODER_BOX_PR_NUMBER \
             nixos/nix:latest \
             sh -euc '
               # The Makefile builds via "nix build --impure" and needs flakes +

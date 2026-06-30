@@ -48,6 +48,15 @@ FLAKE ?= .
 # checkout (the module then falls back to self.rev / "unknown").
 GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
 
+# Optional PR title + number woven into the image's pretty version name
+# (boot-menu label + ISO file name) via coderBox.prTitle / coderBox.prNumber.
+# Not injected through the Nix expression (an arbitrary title would need
+# shell-escaping); instead the options read the CODER_BOX_PR_TITLE /
+# CODER_BOX_PR_NUMBER environment variables under `--impure` (which box_cfg
+# already uses). CI sets them for PR builds; locally you can preview with e.g.
+#   CODER_BOX_PR_TITLE="fix the thing" CODER_BOX_PR_NUMBER=46 make installer/iso
+# Unset → plain names (the options default to "").
+
 # Normalize an arch token to a *-linux triple: $(call norm_arch,aarch64) -> aarch64-linux
 norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 

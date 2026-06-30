@@ -73,16 +73,26 @@ in
     isoImage.volumeID = "CODER_BOX_INSTALLER";
     # Boot-menu label (BIOS/isolinux + EFI/grub). See ../appliance/iso.nix for
     # the format; leading space is required. Include the short build revision so
-    # the boot menu shows exactly which image you're booting.
-    isoImage.appendToMenuLabel = " - Coder Box Installer (${boxRevShort})";
+    # the boot menu shows exactly which image you're booting. For a PR preview
+    # build (coderBox.prMenuSuffix non-empty) the PR reference comes first and
+    # the commit hash moves to the very end, so the label reads
+    # " - Coder Box Installer - PR #46: <title> (<rev>)"; otherwise it's just
+    # " - Coder Box Installer (<rev>)".
+    isoImage.appendToMenuLabel =
+      if config.coderBox.prMenuSuffix != "" then
+        " - Coder Box Installer${config.coderBox.prMenuSuffix} (${boxRevShort})"
+      else
+        " - Coder Box Installer (${boxRevShort})";
 
     # Record the full build revision for install.sh to print (the baked repo
     # under /etc/nixos-repo has no .git, so the script can't get it from git).
     environment.etc."coder-box-rev".text = boxRev + "\n";
 
     # ISO file name, with arch suffix (e.g. coder-box-installer-x86_64-linux.iso).
-    # See ../appliance/iso.nix for why this is mkForce + arch-suffixed.
-    image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";
+    # See ../appliance/iso.nix for why this is mkForce + arch-suffixed. The
+    # PR-slug suffix (coderBox.prFileSuffix) is empty unless this is a PR preview
+    # build (e.g. coder-box-installer-x86_64-linux-pr-fix-the-thing.iso).
+    image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}${config.coderBox.prFileSuffix}";
 
     # ── Auto-launch a full-screen Konsole that runs the installer ──────────────
     # box-turnkey.nix autologins straight into the Plasma (X11) desktop. For the
