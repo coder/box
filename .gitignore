@@ -4,6 +4,10 @@ hosts/*/local.nix
 .terraform/
 *.bak
 
+# Editor / OS cruft and scratch dirs.
+.DS_Store
+tmp/
+
 # Appliance image build outputs (Makefile --out-link target dir + artifacts)
 out/
 *.iso
