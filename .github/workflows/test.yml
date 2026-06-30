@@ -88,21 +88,18 @@ jobs:
         run: make check
 
   # Tiny pre-job that decides, per kind, whether to build the full ISO or just
-  # instantiate the derivation, and assembles a short human title for the build
-  # job. Doing this here (rather than inline in the build job's `name:`) keeps
-  # that name a SHORT expression — `Build ${{ needs.plan.outputs.kinds }}
-  # (${{ matrix.system }})` — so the raw "Matrix:" preview / a skipped job shows
-  # something readable instead of a wall of inlined label checks.
+  # instantiate the derivation, then emits the Images job's build matrix (one
+  # leg per kind × system, each tagged full/drv). Doing the label/event logic
+  # here — rather than inline in the build job's `name:`/`matrix:` — keeps those
+  # expressions short and lets each leg carry a readable ISO/DRV suffix.
   plan:
     name: Plan image targets
     runs-on: ubuntu-latest
     outputs:
-      # "true"/"false" per kind: realise the full ISO, or (drv-only) instantiate.
-      installer_full: ${{ steps.plan.outputs.installer_full }}
-      appliance_full: ${{ steps.plan.outputs.appliance_full }}
-      # Human title fragment, e.g. "installer & appliance ISO" or
-      # "installer ISO & appliance DRV".
-      kinds: ${{ steps.plan.outputs.kinds }}
+      # JSON matrix consumed by the Images job: one entry per (kind × system),
+      # each carrying its runner, whether to realise the full ISO ("full"), and
+      # a short ISO/DRV suffix for the job name.
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - id: plan
         # Manual dispatch builds both full; push to main is drv-only; a PR
@@ -113,34 +110,39 @@ jobs:
           INSTALLER_FULL: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
           APPLIANCE_FULL: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
         run: |
-          isuf=$([ "$INSTALLER_FULL" = "true" ] && echo ISO || echo DRV)
-          asuf=$([ "$APPLIANCE_FULL" = "true" ] && echo ISO || echo DRV)
-          # Always join the two kinds with "&". Collapse to a shared suffix when
-          # they match, otherwise spell each out.
-          if [ "$isuf" = "$asuf" ]; then
-            kinds="installer & appliance $isuf"
-          else
-            kinds="installer $isuf & appliance $asuf"
-          fi
+          # ISO when the kind builds full, DRV when it's instantiate-only.
+          suffix() { [ "$1" = "true" ] && echo ISO || echo DRV; }
+          # Build the matrix: every kind builds on every system, on its own
+          # runner, so installer and appliance run in PARALLEL (each leg builds
+          # exactly one kind) instead of sequentially on one runner. `full`
+          # decides ISO vs drv per leg; jq -c validates + compacts the JSON.
+          matrix=$(jq -c . <<JSON
           {
-            echo "installer_full=$INSTALLER_FULL"
-            echo "appliance_full=$APPLIANCE_FULL"
-            echo "kinds=$kinds"
-          } >>"$GITHUB_OUTPUT"
+            "include": [
+              { "kind": "installer", "system": "x86_64-linux",  "runner": "ubuntu-24.04",     "full": "$INSTALLER_FULL", "suffix": "$(suffix "$INSTALLER_FULL")" },
+              { "kind": "installer", "system": "aarch64-linux", "runner": "ubuntu-24.04-arm", "full": "$INSTALLER_FULL", "suffix": "$(suffix "$INSTALLER_FULL")" },
+              { "kind": "appliance", "system": "x86_64-linux",  "runner": "ubuntu-24.04",     "full": "$APPLIANCE_FULL", "suffix": "$(suffix "$APPLIANCE_FULL")" },
+              { "kind": "appliance", "system": "aarch64-linux", "runner": "ubuntu-24.04-arm", "full": "$APPLIANCE_FULL", "suffix": "$(suffix "$APPLIANCE_FULL")" }
+            ]
+          }
+          JSON
+          )
+          echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
 
   # Job key is "Images" so the matrix shows as "Matrix: Images". `needs: plan`
-  # also means these matrix jobs are skipped if the plan job fails.
+  # also means these matrix jobs are skipped if the plan job fails. Each matrix
+  # leg builds exactly ONE kind on ONE system (installer/appliance × the two
+  # arches), so the two kinds run on separate runners in parallel rather than
+  # sequentially on a single runner.
   Images:
     needs: plan
-    # Short, readable name — the per-kind plan is computed by the `plan` job
-    # above. e.g. "Build installer & appliance ISO (x86_64-linux)" or
-    # "Build installer ISO & appliance DRV (aarch64-linux)".
-    name: Build ${{ needs.plan.outputs.kinds }} (${{ matrix.system }})
+    # Short, readable per-leg name driven by the matrix entry, e.g.
+    # "Build installer ISO (x86_64-linux)" or "Build appliance DRV (aarch64-linux)".
+    name: Build ${{ matrix.kind }} ${{ matrix.suffix }} (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     env:
-      # Resolved per-kind plan from the `plan` job. Steps below branch on these.
-      INSTALLER_FULL: ${{ needs.plan.outputs.installer_full }}
-      APPLIANCE_FULL: ${{ needs.plan.outputs.appliance_full }}
+      # Whether THIS leg's kind realises the full ISO (vs drv-only); from plan.
+      FULL: ${{ matrix.full }}
       # PR title + number woven into the image's pretty version name (boot-menu
       # label + ISO file name) via coderBox.prTitle / coderBox.prNumber. Set
       # through `env:` (not inlined into a run script) so an arbitrary title
@@ -150,12 +152,8 @@ jobs:
       CODER_BOX_PR_NUMBER: ${{ github.event.pull_request.number }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - system: x86_64-linux
-            runner: ubuntu-24.04
-          - system: aarch64-linux
-            runner: ubuntu-24.04-arm
+      # One leg per (kind × system); see the plan job for how it's assembled.
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -176,10 +174,9 @@ jobs:
           restore-prefixes-first-match: nix-images-${{ runner.os }}-${{ runner.arch }}-
           gc-max-store-size-linux: 8G
 
-      # Per-kind plan (full ISO vs drv only) is in the job name; the run summary
-      # below also records it. INSTALLER_FULL / APPLIANCE_FULL come from the
-      # job-level env above.
-      - name: Build images
+      # This leg's plan (full ISO vs drv only) is in the job name; the run
+      # summary below also records it. FULL + matrix.kind come from the matrix.
+      - name: Build image
         id: build
         env:
           # These are verification images, not shipped artifacts, so trade ISO
@@ -189,62 +186,42 @@ jobs:
           # every commit regardless of caching. Releases keep the slow default.
           ISO_COMPRESSION: zstd -Xcompression-level 3
         run: |
-          # Record the per-kind plan in the run summary for quick scanning.
-          plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }
+          # Record this leg's plan in the run summary for quick scanning.
+          [ "$FULL" = "true" ] && plan="full ISO" || plan="derivation only"
           {
-            echo "### Build plan (${{ matrix.system }})"
-            echo "- installer: $(plan "$INSTALLER_FULL")"
-            echo "- appliance: $(plan "$APPLIANCE_FULL")"
+            echo "### Build plan (${{ matrix.kind }} / ${{ matrix.system }})"
+            echo "- ${{ matrix.kind }}: $plan"
           } >>"$GITHUB_STEP_SUMMARY"
 
-          # Nix is on the host now, so make/git (preinstalled on the runner)
-          # build straight into the host /nix/store — no container. A full build
-          # → make <kind>/iso, then dereference the image + its .sha256 sidecar
-          # (colocated in out/<kind>-iso/iso) into a real dir for upload; a
-          # drv-only kind just instantiates. Bare target → native currentSystem.
+          # Nix is on the host (make/git preinstalled on the runner) so the
+          # build goes straight into the host /nix/store — no container. A full
+          # build → make <kind>/iso, then dereference the image + its .sha256
+          # sidecar (colocated in out/<kind>-iso/iso) into a real dir for
+          # upload; a drv-only kind just instantiates. The job-level
+          # CODER_BOX_PR_TITLE / CODER_BOX_PR_NUMBER env is inherited by make
+          # directly (read under --impure for the pretty version name).
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          # Nix is on the host (make/git preinstalled on the runner) so the
-          # build goes straight into the host /nix/store — no container. The
-          # job-level CODER_BOX_PR_TITLE / CODER_BOX_PR_NUMBER env is inherited
-          # by make directly (read under --impure for the pretty version name).
-          build_kind() {
-            kind="$1"; full="$2"
-            if [ "$full" = "true" ]; then
-              make "$kind/iso"
-              cp -L "out/$kind-iso/iso"/* "$dist/"
-            else
-              make "$kind/drv"
-            fi
-          }
-          build_kind installer "$INSTALLER_FULL"
-          build_kind appliance "$APPLIANCE_FULL"
+          kind="${{ matrix.kind }}"
+          if [ "$FULL" = "true" ]; then
+            make "$kind/iso"
+            cp -L "out/$kind-iso/iso"/* "$dist/"
+          else
+            make "$kind/drv"
+          fi
           ls -lh "$dist"
 
-      # One artifact per kind, each bundling that kind's ISO with its .sha256
-      # sidecar (a single upload-artifact step uploads its matched files
-      # CONCURRENTLY, so the multi-GB ISO and its checksum go up together).
-      # Installer and appliance stay in SEPARATE artifacts so each kind can be
-      # downloaded on its own. Each step runs only when its kind built full.
-      - name: Upload installer ISO artifact
-        if: env.INSTALLER_FULL == 'true'
+      # Bundle this leg's ISO with its .sha256 sidecar in one artifact (a single
+      # upload-artifact step uploads its matched files CONCURRENTLY, so the
+      # multi-GB ISO and its checksum go up together). Only full-ISO legs upload.
+      - name: Upload ISO artifact
+        if: env.FULL == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: coder-box-installer-${{ matrix.system }}
+          name: coder-box-${{ matrix.kind }}-${{ matrix.system }}
           path: |
-            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
-            ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
+            ${{ steps.build.outputs.dist }}/coder-box-${{ matrix.kind }}-*.iso
+            ${{ steps.build.outputs.dist }}/coder-box-${{ matrix.kind }}-*.iso.sha256
           # Verification build; keep storage cost minimal.
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Upload appliance ISO artifact
-        if: env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v5
-        with:
-          name: coder-box-appliance-${{ matrix.system }}
-          path: |
-            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
-            ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
