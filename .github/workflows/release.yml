@@ -6,13 +6,12 @@
 #   * run manually from the Actions tab (workflow_dispatch), supplying a tag
 #     and optionally a ref/commit to build.
 #
-# Like test.yml, each arch builds natively and the build runs inside the
-# `nixos/nix` container via `docker run` (the whole job can't use `container:`
-# because that image lacks a glibc loader for GitHub's bundled Node, which
-# breaks every JS action). Bare `make <target>` resolves to the runner's native
-# currentSystem; the resulting ISO is copied out of the ephemeral container
-# store into a host mktemp dir. The release job gathers all ISOs and attaches
-# them (with sha256 checksums) to the release.
+# Like test.yml, each arch builds on its own native runner with Nix installed
+# directly on the host (cachix/install-nix-action) and the /nix/store cached
+# across runs (nix-community/cache-nix-action). Bare `make <target>` resolves to
+# the runner's native currentSystem; the resulting ISO + its .sha256 sidecar are
+# dereferenced into a host mktemp dir. The release job gathers all ISOs and
+# attaches them (with sha256 checksums) to the release.
 
 name: Build and release ISO
 
@@ -72,36 +71,36 @@ jobs:
           # to release an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # ISO closures are large; cap the saved store so a build can't blow
+          # past the repo's GitHub Actions cache budget (10G total).
+          primary-key: nix-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-images-${{ runner.os }}-${{ runner.arch }}-
+          gc-max-store-size-linux: 8G
+
       - name: Build ISO
         id: build
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          # Host /dist volume, bind-mounted into the container, where the build
-          # drops the finished ISO (the container's /nix/store is ephemeral, so
-          # the in-tree out/ symlink would dangle on the host — we dereference
-          # the built ISO into /dist instead).
+          # Nix is on the host, so make/git (preinstalled on the runner) build
+          # straight into the host /nix/store. The ISO target puts the image and
+          # its .sha256 sidecar together in out/<target>-iso/iso, so a single
+          # cp -L dereferences both into a real mktemp dir for upload (release
+          # consumers can verify the download). Bare target → native
+          # currentSystem (matrix pins the matching native runner).
           dist="$(mktemp -d)"
           echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          outlink="out/$TARGET-iso/iso"
-          docker run --rm \
-            -v "$PWD":/work -w /work \
-            -v "$dist":/dist \
-            -e TARGET -e outlink="$outlink" \
-            nixos/nix:latest \
-            sh -euc '
-              export NIX_CONFIG="experimental-features = nix-command flakes"
-              git config --global --add safe.directory /work
-              # gnumake provides "make"; git lets the Makefile stamp the rev. The
-              # ISO targets put the image and its .sha256 sidecar together in
-              # out/<target>-iso/iso, so a single cp -L grabs both (release
-              # consumers can verify the download). Bare target → native
-              # currentSystem (matrix pins the matching native runner).
-              nix-shell -p gnumake git --run "make $TARGET/iso"
-              # Dereference the build store symlink (+ checksum sidecar) into
-              # the /dist volume.
-              cp -L "$outlink"/* /dist/
-            '
+          make "$TARGET/iso"
+          cp -L "out/$TARGET-iso/iso"/* "$dist/"
           ls -lh "$dist"
 
       - name: Upload ISO artifact
