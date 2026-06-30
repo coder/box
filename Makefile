@@ -40,6 +40,21 @@
 NIX   ?= nix
 FLAKE ?= .
 
+# Every target below drives the flake CLI (`nix build`, `nix flake check`,
+# `nix fmt`), so enable the flakes + nix-command interface here instead of
+# making each developer turn it on in their global nix.conf. Two deliberate
+# choices keep this non-invasive:
+#   * `--extra-experimental-features` is ADDITIVE — it ORs with whatever the
+#     user's nix.conf already enables, so it never replaces their settings
+#     (unlike the non-`extra-` form, which overwrites the whole list).
+#   * We APPEND to $(NIX) with `+=` rather than redefining it, so an env-set
+#     `NIX` (e.g. a custom binary/path) is preserved — we add the flag, we
+#     don't clobber the user's choice. (`+=` honours an environment NIX; a
+#     command-line `make NIX=…` still wins outright, as expected.)
+# Set `NIX_EXTRA_EXPERIMENTAL_FEATURES=` (empty) to opt out without editing this file.
+NIX_EXTRA_EXPERIMENTAL_FEATURES ?= nix-command flakes
+NIX += $(if $(strip $(NIX_EXTRA_EXPERIMENTAL_FEATURES)),--extra-experimental-features "$(NIX_EXTRA_EXPERIMENTAL_FEATURES)")
+
 # Build parallelism + substituter tuning, applied to every Nix invocation
 # (build and eval) via NIX_PERF_FLAGS below. max-jobs runs independent
 # derivations concurrently and cores=0 lets each build use all CPUs;
