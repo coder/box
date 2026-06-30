@@ -1,4 +1,4 @@
-# Build ISO — builds the installer AND appliance ISOs for every supported
+# Build images — builds the installer AND appliance ISOs for every supported
 # architecture.
 #
 # Each arch builds on a native runner; the build itself runs inside the
@@ -25,10 +25,10 @@
 #       trigger means adding the label kicks off the full build.
 # The job always runs (drafts just do derivations) so its name renders rather
 # than showing a skipped job's raw name expression; the job name shows the
-# per-kind plan (installer/appliance → ISO or drv). Verification artifacts are
+# per-kind plan (installer/appliance → ISO or DRV). Verification artifacts are
 # short-lived (1 day).
 
-name: Build ISO
+name: Build images
 
 on:
   push:
@@ -56,17 +56,26 @@ concurrency:
 jobs:
   iso:
     # Title shows, at a glance, what each kind is doing: "ISO" (full image) or
-    # "drv" (derivation only), e.g.
-    #   Build installer ISO + appliance drv (x86_64-linux)
-    # The literal words "installer"/"appliance" live OUTSIDE the expressions, so
-    # both kinds stay legible even in the raw form GitHub shows for a skipped job
-    # (the per-kind suffix just defaults to "drv"). NOTE: the `env` context is
-    # not available in a job name, so the label/draft checks are inlined here —
-    # they mirror the INSTALLER_FULL/APPLIANCE_FULL job env below.
+    # "DRV" (derivation only). When both kinds match it collapses to a shared
+    # suffix, e.g.
+    #   Build installer & appliance ISO (x86_64-linux)   # both full
+    #   Build installer & appliance DRV (aarch64-linux)  # both drv-only
+    # and when they differ it spells out each, e.g.
+    #   Build installer ISO + appliance DRV (x86_64-linux)
+    # NOTE: the `env` context is not available in a job name, so the label/draft
+    # checks are inlined here — they mirror INSTALLER_FULL/APPLIANCE_FULL below.
     name: >-
-      Build installer ${{ (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'drv' }}
-      + appliance ${{ (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))) && 'ISO' || 'drv' }}
-      (${{ matrix.system }})
+      ${{ (
+            (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')))
+            == (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')))
+          )
+          && format('Build installer & appliance {0} ({1})',
+               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
+               matrix.system)
+          || format('Build installer {0} + appliance {1} ({2})',
+               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
+               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))) && 'ISO' || 'DRV',
+               matrix.system) }}
     # NOTE: no job-level draft skip. Skipping the whole job on draft PRs (a) left
     # the job name unrendered/garbage and (b) meant a draft built nothing here.
     # Instead the per-kind FULL flags below treat drafts as "no full build", so
