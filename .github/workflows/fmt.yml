@@ -1,0 +1,58 @@
+# Formatting & linting — verifies the tree is already formatted and lint-clean.
+# Formatting and linting are CHECKED here, never applied: CI only fails (with a
+# diff) when something is off — fixing it is `make fmt` locally.
+#
+# Two independent jobs run separate tool sets (treefmt config in ../../treefmt.nix):
+#   * format → `make fmt/check`: nixfmt + shfmt, check-only (no writes).
+#   * lint   → `make lint`:      statix + deadnix + shellcheck, check-only.
+# Splitting them means a formatting miss and a lint finding show up as distinct,
+# independently-rerunnable checks.
+#
+# Unlike the heavy image builds (test.yml / release.yml, which run inside the
+# nixos/nix container), these checks are light, so we just install Nix on the
+# runner with nix-installer-action (flakes enabled) and run `make` directly —
+# GNU Make is preinstalled on the GitHub Ubuntu runners.
+
+name: Code quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: fmt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # Check-only (`--ci`): fails with a diff if anything is unformatted. Does
+      # NOT modify the tree — run `make fmt` locally to fix.
+      - name: make fmt/check
+        run: make fmt/check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # Check-only (`--ci`): fails with a diff (statix/deadnix) or findings
+      # (shellcheck). Does NOT modify the tree.
+      - name: make lint
+        run: make lint

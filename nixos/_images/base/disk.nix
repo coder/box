@@ -7,7 +7,11 @@
 # Consumes disko's `config.system.build.diskoImages` (a store directory holding
 # one `<imageName>.<format>` file per disk, see hosts/_appliance-disk) and
 # exposes `config.system.build.diskoImagesDir`.
-{ config, lib, pkgs, ... }:
+{
+  config,
+  pkgs,
+  ...
+}:
 {
   # A store output that bundles each disk image together with its SHA-256
   # checksum, so the checksum lives in the (immutable) /nix/store right beside

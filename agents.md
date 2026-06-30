@@ -50,6 +50,27 @@ Tailscale is managed by `nixos/modules/tailscale`. Auth key is set as `authKey` 
 
 `tailscale-autoauth.service` has `RemainAfterExit = true` — it won't re-run on `nixos-rebuild switch` if Tailscale is already authenticated. Check status with `tailscale status`.
 
+## Formatting & Linting
+
+Nix and shell files are formatted/linted with [treefmt](https://github.com/numtide/treefmt)
+(config in `treefmt.nix`). Formatting and linting are kept separate:
+
+- **Format:** `nixfmt` (Nix) + `shfmt` (shell)
+- **Lint:** `statix` + `deadnix` (Nix) + `shellcheck` (shell)
+
+```sh
+# Format the whole tree in place — run before committing:
+make fmt
+
+# Check-only (no writes); these are what CI runs and fail with a diff:
+make fmt/check   # formatting only
+make lint        # linting only
+```
+
+CI enforces this via `.github/workflows/fmt.yml`, which runs the format check and
+the lint check as two separate jobs — neither modifies the tree, they only fail
+if something is off. Run `make fmt` to fix formatting locally.
+
 ## Git Workflow
 
 All files in `/etc/nixos-repo/` are root-owned. Use `sudo git`:

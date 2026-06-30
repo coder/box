@@ -45,7 +45,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (tmpfs/RAM on a live ISO) and re-exec from there. The copy is a verbatim
 # `cp -a`, so if the baked repo carries a .git the copy keeps it (with its
 # origin) and the installed /etc/nixos-repo can still `git pull`.
-if [[ ! -w "$REPO_DIR" ]]; then
+if [[ ! -w $REPO_DIR ]]; then
   workdir="$(mktemp -d "${TMPDIR:-/tmp}/coder-box-install.XXXXXX")"
   echo "=== Repo at $REPO_DIR is read-only; copying to a writable dir at $workdir/box ===" >&2
   cp -a "$REPO_DIR/." "$workdir/box/"
@@ -94,7 +94,7 @@ if [[ "$(getopt --version 2>/dev/null)" == *--* ]]; then
   exit 1
 fi
 if ! PARSED="$(getopt --options "$SHORT_OPTS" --longoptions "$LONG_OPTS" \
-                      --name install.sh -- "$@")"; then
+  --name install.sh -- "$@")"; then
   usage >&2
   exit 2
 fi
@@ -102,29 +102,83 @@ eval set -- "$PARSED"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --hostname)              HOSTNAME_ARG="$2";              shift 2 ;;
-    --hardware-desc)         HARDWARE_DESC_ARG="$2";         shift 2 ;;
-    --disk)                  DISK_ARG="$2";                  shift 2 ;;
-    --coder-admin-email)           ADMIN_EMAIL_ARG="$2";           shift 2 ;;
-    --coder-admin-password)        ADMIN_PASSWORD_ARG="$2";        shift 2 ;;
-    --coder-admin-password-file)   ADMIN_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --nixos-username)        NIXOS_USERNAME_ARG="$2";        shift 2 ;;
-    --nixos-password)        NIXOS_PASSWORD_ARG="$2";        shift 2 ;;
-    --nixos-password-file)   NIXOS_PASSWORD_FILE_ARG="$2";   shift 2 ;;
-    --lan-ip)                LAN_IP_ARG="$2";                shift 2 ;;
-    --no-reboot)             NO_REBOOT=1;                    shift ;;
-    --interactive|-i)        INTERACTIVE=1;                  shift ;;
-    --unsafe-assume-disk)    UNSAFE_ASSUME_DISK=1;           shift ;;
-    --yes|-y)                ASSUME_YES=1;                   shift ;;
-    --help|-h)               usage; exit 0 ;;
-    --) shift; break ;;
-    *) echo "unknown flag: $1" >&2; usage >&2; exit 2 ;;
+  --hostname)
+    HOSTNAME_ARG="$2"
+    shift 2
+    ;;
+  --hardware-desc)
+    HARDWARE_DESC_ARG="$2"
+    shift 2
+    ;;
+  --disk)
+    DISK_ARG="$2"
+    shift 2
+    ;;
+  --coder-admin-email)
+    ADMIN_EMAIL_ARG="$2"
+    shift 2
+    ;;
+  --coder-admin-password)
+    ADMIN_PASSWORD_ARG="$2"
+    shift 2
+    ;;
+  --coder-admin-password-file)
+    ADMIN_PASSWORD_FILE_ARG="$2"
+    shift 2
+    ;;
+  --nixos-username)
+    NIXOS_USERNAME_ARG="$2"
+    shift 2
+    ;;
+  --nixos-password)
+    NIXOS_PASSWORD_ARG="$2"
+    shift 2
+    ;;
+  --nixos-password-file)
+    NIXOS_PASSWORD_FILE_ARG="$2"
+    shift 2
+    ;;
+  --lan-ip)
+    LAN_IP_ARG="$2"
+    shift 2
+    ;;
+  --no-reboot)
+    NO_REBOOT=1
+    shift
+    ;;
+  --interactive | -i)
+    INTERACTIVE=1
+    shift
+    ;;
+  --unsafe-assume-disk)
+    UNSAFE_ASSUME_DISK=1
+    shift
+    ;;
+  --yes | -y)
+    ASSUME_YES=1
+    shift
+    ;;
+  --help | -h)
+    usage
+    exit 0
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    echo "unknown flag: $1" >&2
+    usage >&2
+    exit 2
+    ;;
   esac
 done
 
 # Reject stray positionals (e.g. tokens after `--`); this installer takes none.
 if [[ $# -gt 0 ]]; then
-  echo "unexpected argument: $1" >&2; usage >&2; exit 2
+  echo "unexpected argument: $1" >&2
+  usage >&2
+  exit 2
 fi
 
 # --interactive is meaningless in unattended mode: --yes assumes defaults and
@@ -133,18 +187,30 @@ if [[ $ASSUME_YES -eq 1 ]]; then
   INTERACTIVE=0
 fi
 
-if [[ -n "$ADMIN_PASSWORD_FILE_ARG" ]]; then
-  [[ -r "$ADMIN_PASSWORD_FILE_ARG" ]] || { echo "cannot read $ADMIN_PASSWORD_FILE_ARG" >&2; exit 1; }
+if [[ -n $ADMIN_PASSWORD_FILE_ARG ]]; then
+  [[ -r $ADMIN_PASSWORD_FILE_ARG ]] || {
+    echo "cannot read $ADMIN_PASSWORD_FILE_ARG" >&2
+    exit 1
+  }
   ADMIN_PASSWORD_ARG="$(head -n1 "$ADMIN_PASSWORD_FILE_ARG" | tr -d '\r\n')"
 fi
-if [[ -n "$NIXOS_PASSWORD_FILE_ARG" ]]; then
-  [[ -r "$NIXOS_PASSWORD_FILE_ARG" ]] || { echo "cannot read $NIXOS_PASSWORD_FILE_ARG" >&2; exit 1; }
+if [[ -n $NIXOS_PASSWORD_FILE_ARG ]]; then
+  [[ -r $NIXOS_PASSWORD_FILE_ARG ]] || {
+    echo "cannot read $NIXOS_PASSWORD_FILE_ARG" >&2
+    exit 1
+  }
   NIXOS_PASSWORD_ARG="$(head -n1 "$NIXOS_PASSWORD_FILE_ARG" | tr -d '\r\n')"
 fi
 
 # ── Sanity ─────────────────────────────────────────────────────────────────
-[[ $EUID -eq 0 ]] || { echo "must run as root (use sudo)" >&2; exit 1; }
-[[ -f "$REPO_DIR/flake.nix" ]] || { echo "no flake.nix at $REPO_DIR" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || {
+  echo "must run as root (use sudo)" >&2
+  exit 1
+}
+[[ -f "$REPO_DIR/flake.nix" ]] || {
+  echo "no flake.nix at $REPO_DIR" >&2
+  exit 1
+}
 
 # Required tools. nixos-install only exists on the NixOS live USB, so a missing
 # one is the clearest signal you're not running this where it's meant to run.
@@ -154,7 +220,7 @@ REQUIRED_TOOLS=(lsblk openssl git nix nixos-install)
 [[ $INTERACTIVE -eq 1 ]] && REQUIRED_TOOLS+=(gum)
 for tool in "${REQUIRED_TOOLS[@]}"; do
   command -v "$tool" >/dev/null && continue
-  if [[ "$tool" == "nixos-install" ]]; then
+  if [[ $tool == "nixos-install" ]]; then
     echo "nixos-install missing (use the NixOS live USB)" >&2
   else
     echo "$tool missing" >&2
@@ -171,8 +237,8 @@ git config --global --add safe.directory "$REPO_DIR"
 check_nix_store_space() {
   local avail_kb
   avail_kb=$(df -Pk /nix/store 2>/dev/null | awk 'NR==2 {print $4}')
-  if [[ -z "$avail_kb" ]]; then return 0; fi
-  if [[ "$avail_kb" -lt 524288 ]]; then
+  if [[ -z $avail_kb ]]; then return 0; fi
+  if [[ $avail_kb -lt 524288 ]]; then
     cat >&2 <<EOF
 
 ERROR: /nix/store has less than 512 MiB free (\$(df -h /nix/store | awk 'NR==2 {print \$4}') available).
@@ -197,10 +263,13 @@ check_nix_store_space
 detect_lan_ip() {
   local ip
   ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
-  if [[ -z "$ip" ]]; then return 1; fi
+  if [[ -z $ip ]]; then return 1; fi
   case "$ip" in
-    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) echo "$ip"; return 0 ;;
-    *) return 1 ;;
+  10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[0-1].*)
+    echo "$ip"
+    return 0
+    ;;
+  *) return 1 ;;
   esac
 }
 
@@ -211,7 +280,7 @@ detect_hardware_desc() {
     product=$(dmidecode -s system-product-name 2>/dev/null | tail -n1 || true)
     local combined="${manufacturer} ${product}"
     combined=$(echo "$combined" | sed 's/^ *//; s/ *$//; s/  */ /g')
-    if [[ -n "$combined" && "$combined" != "To be filled by O.E.M." ]]; then
+    if [[ -n $combined && $combined != "To be filled by O.E.M." ]]; then
       echo "$combined"
       return 0
     fi
@@ -220,20 +289,26 @@ detect_hardware_desc() {
 }
 
 validate_hostname() {
-  [[ "$1" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || {
+  [[ $1 =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || {
     echo "hostname must be DNS-safe (lowercase, digits, hyphens; no leading/trailing hyphen): $1" >&2
     return 1
   }
-  [[ ${#1} -le 63 ]] || { echo "hostname too long (>63 chars): $1" >&2; return 1; }
+  [[ ${#1} -le 63 ]] || {
+    echo "hostname too long (>63 chars): $1" >&2
+    return 1
+  }
 }
 
 validate_username() {
   # POSIX-portable: lowercase letter or _, then lowercase/digit/_/-, max 32.
-  [[ "$1" =~ ^[a-z_][a-z0-9_-]*$ ]] || {
+  [[ $1 =~ ^[a-z_][a-z0-9_-]*$ ]] || {
     echo "username must start with a letter or _ and contain only lowercase letters, digits, hyphens, or underscores: $1" >&2
     return 1
   }
-  [[ ${#1} -le 32 ]] || { echo "username too long (>32 chars): $1" >&2; return 1; }
+  [[ ${#1} -le 32 ]] || {
+    echo "username too long (>32 chars): $1" >&2
+    return 1
+  }
 }
 
 # Escape for a Nix "..." string literal.
@@ -252,8 +327,8 @@ list_disks() {
   # Skip zram (compressed RAM swap, /dev/zramN) — it reports TYPE=disk RM=0 so
   # it would otherwise show up as an install target, which is never what we want
   # (installing onto RAM swap). Also skip device-mapper / md / loop just in case.
-  lsblk -d -p -n -b -o NAME,SIZE,RM,TYPE,MODEL \
-    | awk '$4=="disk" && $3=="0" && $1 !~ /\/(zram|dm-|md|loop)[0-9]+$/ { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
+  lsblk -d -p -n -b -o NAME,SIZE,RM,TYPE,MODEL |
+    awk '$4=="disk" && $3=="0" && $1 !~ /\/(zram|dm-|md|loop)[0-9]+$/ { size_h=$2; cmd="numfmt --to=iec --suffix=B "$2; cmd|getline size_h; close(cmd); model=""; for(i=5;i<=NF;i++) model=model (model==""?"":" ") $i; print $1"\t"size_h"\t"model }'
 }
 
 # Interactive UI via gum (charmbracelet) — the modern alternative to the ncurses
@@ -302,18 +377,31 @@ prompt_secret() {
 # value errors out the same as before).
 resolve_value() {
   local -n _rv_var="$1"
-  local label="$2" default="$3"; shift 3
+  local label="$2" default="$3"
+  shift 3
   local secret=0 validate="" flagname=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --secret)       secret=1;        shift ;;
-      --validate)     validate="$2";   shift 2 ;;
-      --default-flag) flagname="$2";   shift 2 ;;
-      *) echo "resolve_value: unknown option $1" >&2; exit 2 ;;
+    --secret)
+      secret=1
+      shift
+      ;;
+    --validate)
+      validate="$2"
+      shift 2
+      ;;
+    --default-flag)
+      flagname="$2"
+      shift 2
+      ;;
+    *)
+      echo "resolve_value: unknown option $1" >&2
+      exit 2
+      ;;
     esac
   done
 
-  if [[ -z "$_rv_var" ]]; then
+  if [[ -z $_rv_var ]]; then
     if [[ $INTERACTIVE -eq 1 ]]; then
       while :; do
         if [[ $secret -eq 1 ]]; then
@@ -321,13 +409,13 @@ resolve_value() {
         else
           _rv_var="$(prompt_value "$label" "$default")"
         fi
-        [[ -z "$validate" ]] && break
+        [[ -z $validate ]] && break
         "$validate" "$_rv_var" && break
       done
     else
       _rv_var="$default"
     fi
-    if [[ -n "$flagname" && "$_rv_var" == "$default" ]]; then
+    if [[ -n $flagname && $_rv_var == "$default" ]]; then
       local -n _rv_flag="$flagname"
       _rv_flag=1
     fi
@@ -340,8 +428,14 @@ resolve_value() {
 # the box image writes (its /etc/nixos-repo has no .git), else "unknown".
 box_revision() {
   local rev
-  rev="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" && { echo "$rev"; return; }
-  rev="$(cat /etc/coder-box-rev 2>/dev/null)" && [[ -n "$rev" ]] && { echo "$rev"; return; }
+  rev="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" && {
+    echo "$rev"
+    return
+  }
+  rev="$(cat /etc/coder-box-rev 2>/dev/null)" && [[ -n $rev ]] && {
+    echo "$rev"
+    return
+  }
   echo "unknown"
 }
 echo "=== Coder NixOS installer ==="
@@ -384,14 +478,17 @@ resolve_value HARDWARE_DESC_ARG "Hardware description" "$(detect_hardware_desc)"
 # Disk has no safe default. Non-interactive runs must pass --disk (or opt into
 # --unsafe-assume-disk to auto-pick the first detected disk); interactive runs
 # get the picker below.
-if [[ -z "$DISK_ARG" ]]; then
+if [[ -z $DISK_ARG ]]; then
   if [[ $INTERACTIVE -ne 1 ]]; then
     if [[ $UNSAFE_ASSUME_DISK -eq 1 ]]; then
       # Caller explicitly accepted the risk: assume the first auto-detected disk
       # without confirmation. This WILL be wiped, so it's gated behind the
       # scary-named flag.
       mapfile -t DISKS < <(list_disks)
-      [[ ${#DISKS[@]} -gt 0 ]] || { echo "--unsafe-assume-disk: no eligible disk detected" >&2; exit 1; }
+      [[ ${#DISKS[@]} -gt 0 ]] || {
+        echo "--unsafe-assume-disk: no eligible disk detected" >&2
+        exit 1
+      }
       DISK_ARG=$(awk '{print $1}' <<<"${DISKS[0]}")
       echo "--unsafe-assume-disk: assuming $DISK_ARG" >&2
     else
@@ -402,14 +499,17 @@ if [[ -z "$DISK_ARG" ]]; then
     fi
   fi
 fi
-if [[ -z "$DISK_ARG" && $INTERACTIVE -eq 1 ]]; then
+if [[ -z $DISK_ARG && $INTERACTIVE -eq 1 ]]; then
   echo
   mapfile -t DISKS < <(list_disks)
   if [[ ${#DISKS[@]} -eq 0 ]]; then
     # Nothing auto-detected: skip the picker and drop straight to manual entry.
     echo "  disk detection found no eligible disks; enter a path manually" >&2
-    DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" \
-      || { echo "no disk entered" >&2; exit 1; }
+    DISK_ARG="$(gum input --prompt "Disk path: " --placeholder "/dev/sda")" ||
+      {
+        echo "no disk entered" >&2
+        exit 1
+      }
   else
     # Offer the detected disks plus an "Other …" escape hatch for paths the
     # auto-detection missed (unusual controllers, /dev/mapper, etc.). gum choose
@@ -417,16 +517,25 @@ if [[ -z "$DISK_ARG" && $INTERACTIVE -eq 1 ]]; then
     # (visually apart, but not its own pickable item) rather than a separate
     # focusable divider line.
     OTHER_LABEL="────────  Other (enter a disk path manually)"
-    sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" \
-      | gum choose --header "Install to which disk? (it WILL be wiped)")" \
-      || { echo "no disk selected" >&2; exit 1; }
-    [[ -n "$sel" ]] || { echo "no disk selected" >&2; exit 1; }
-    if [[ "$sel" == "$OTHER_LABEL" ]]; then
+    sel="$(printf '%s\n' "${DISKS[@]}" "$OTHER_LABEL" |
+      gum choose --header "Install to which disk? (it WILL be wiped)")" ||
+      {
+        echo "no disk selected" >&2
+        exit 1
+      }
+    [[ -n $sel ]] || {
+      echo "no disk selected" >&2
+      exit 1
+    }
+    if [[ $sel == "$OTHER_LABEL" ]]; then
       # Prefill with the main guessed disk (first detected) so the user can edit
       # a near-correct path instead of typing from scratch.
       DISK_ARG="$(gum input --prompt "Disk path: " \
-        --value "$(awk '{print $1}' <<<"${DISKS[0]}")" --placeholder "/dev/sda")" \
-        || { echo "no disk entered" >&2; exit 1; }
+        --value "$(awk '{print $1}' <<<"${DISKS[0]}")" --placeholder "/dev/sda")" ||
+        {
+          echo "no disk entered" >&2
+          exit 1
+        }
     else
       DISK_ARG=$(awk '{print $1}' <<<"$sel")
     fi
@@ -434,7 +543,10 @@ if [[ -z "$DISK_ARG" && $INTERACTIVE -eq 1 ]]; then
   # gum clears its widget after submit; echo the choice so it stays on screen.
   echo "  Install to disk: $DISK_ARG" >&2
 fi
-[[ -b "$DISK_ARG" ]] || { echo "not a block device: $DISK_ARG" >&2; exit 1; }
+[[ -b $DISK_ARG ]] || {
+  echo "not a block device: $DISK_ARG" >&2
+  exit 1
+}
 
 # Prompt order mirrors the summary/log ordering: LAN IP, NixOS login creds,
 # then Coder admin creds.
@@ -443,7 +555,7 @@ fi
 # which we map back to empty so downstream treats it as "no IP detected").
 LAN_IP_DEFAULT="$(detect_lan_ip || true)"
 resolve_value LAN_IP_ARG "LAN IP" "${LAN_IP_DEFAULT:-none}"
-[[ "$LAN_IP_ARG" == "none" ]] && LAN_IP_ARG=""
+[[ $LAN_IP_ARG == "none" ]] && LAN_IP_ARG=""
 
 resolve_value NIXOS_USERNAME_ARG "NixOS login user" "$DEFAULT_NIXOS_USERNAME" \
   --validate validate_username --default-flag NIXOS_USERNAME_IS_DEFAULT
@@ -458,7 +570,7 @@ resolve_value ADMIN_PASSWORD_ARG "Coder admin password" "$DEFAULT_ADMIN_PASSWORD
 
 # Existing host folder?
 HOST_DIR="$REPO_DIR/hosts/$HOSTNAME_ARG"
-if [[ -d "$HOST_DIR" ]]; then
+if [[ -d $HOST_DIR ]]; then
   echo
   echo "  hosts/$HOSTNAME_ARG already exists, using existing files." >&2
   echo "  Delete the folder first to regenerate." >&2
@@ -470,23 +582,24 @@ fi
 # line, labels the disk "(will wipe)", and flags values left at their defaults.
 # Passwords are masked unless they're the well-known default (shown so the user
 # knows it's in use).
+# $row is an intentional, fixed printf format string reused for every row.
+# shellcheck disable=SC2059
 print_summary() {
   local mode="$1"
   local row="  %-21s %s\n"
   local disk_label="Disk:" mark_host="" mark_email="" mark_user=""
-  if [[ "$mode" == "ready" ]]; then
+  if [[ $mode == "ready" ]]; then
     disk_label="Disk (will wipe):"
-    [[ $HOSTNAME_IS_DEFAULT       -eq 1 ]] && mark_host="  (default)"
-    [[ $EMAIL_IS_DEFAULT          -eq 1 ]] && mark_email="  (default)"
+    [[ $HOSTNAME_IS_DEFAULT -eq 1 ]] && mark_host="  (default)"
+    [[ $EMAIL_IS_DEFAULT -eq 1 ]] && mark_email="  (default)"
     [[ $NIXOS_USERNAME_IS_DEFAULT -eq 1 ]] && mark_user="  (default)"
   fi
   local masked_nixos_pw masked_admin_pw
   masked_nixos_pw="$(printf '%*s' "${#NIXOS_PASSWORD_ARG}" '' | tr ' ' '*')"
   masked_admin_pw="$(printf '%*s' "${#ADMIN_PASSWORD_ARG}" '' | tr ' ' '*')"
 
-  # shellcheck disable=SC2059  # $row is an intentional, fixed format string.
   printf "$row" "Hostname:" "$HOSTNAME_ARG$mark_host"
-  [[ "$mode" == "ready" ]] && printf "$row" "Hardware:" "$HARDWARE_DESC_ARG"
+  [[ $mode == "ready" ]] && printf "$row" "Hardware:" "$HARDWARE_DESC_ARG"
   printf "$row" "$disk_label" "$DISK_ARG"
   printf "$row" "LAN IP:" "${LAN_IP_ARG:-(none detected)}"
   printf "$row" "NixOS login user:" "$NIXOS_USERNAME_ARG$mark_user"
@@ -507,8 +620,8 @@ echo
 echo "────────────────────────────────────────────────────────────"
 echo "Ready to install:"
 print_summary ready
-if [[ $HOSTNAME_IS_DEFAULT -eq 1 || $EMAIL_IS_DEFAULT -eq 1 || $PASSWORD_IS_DEFAULT -eq 1 \
-   || $NIXOS_USERNAME_IS_DEFAULT -eq 1 || $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
+if [[ $HOSTNAME_IS_DEFAULT -eq 1 || $EMAIL_IS_DEFAULT -eq 1 || $PASSWORD_IS_DEFAULT -eq 1 ||
+  $NIXOS_USERNAME_IS_DEFAULT -eq 1 || $NIXOS_PASSWORD_IS_DEFAULT -eq 1 ]]; then
   echo
   echo "  Some values are defaults. Override with --hostname/--coder-admin-email/"
   echo "  --coder-admin-password/--nixos-username/--nixos-password, or change"
@@ -518,8 +631,11 @@ echo
 
 if [[ $ASSUME_YES -eq 0 ]]; then
   # --default=false so the destructive action isn't the pre-selected button.
-  gum confirm --default=false "Wipe $DISK_ARG and install?" \
-    || { echo "aborted." >&2; exit 1; }
+  gum confirm --default=false "Wipe $DISK_ARG and install?" ||
+    {
+      echo "aborted." >&2
+      exit 1
+    }
 fi
 
 # ── Generate host files ────────────────────────────────────────────────────
@@ -528,7 +644,7 @@ mkdir -p "$HOST_DIR"
 # default.nix: disko-standard layout, target disk override, conditional
 # local.nix, facter when present.
 if [[ ! -f "$HOST_DIR/default.nix" ]]; then
-  cat > "$HOST_DIR/default.nix" <<NIX
+  cat >"$HOST_DIR/default.nix" <<NIX
 # Hardware: ${HARDWARE_DESC_ARG}.
 #
 # Generated by install.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ).
@@ -565,7 +681,7 @@ if [[ ! -f "$HOST_DIR/local.nix" ]]; then
     -e "s|nixosUsername = \"coderbox\";|nixosUsername = \"${esc_username}\";|" \
     -e "s|initialPassword = \"changeme\";|initialPassword = \"${esc_nixos_pw}\";|" \
     "$HOST_DIR/local.nix"
-  if [[ -n "$LAN_IP_ARG" ]]; then
+  if [[ -n $LAN_IP_ARG ]]; then
     esc_ip=$(sed_replacement_escape "$(nix_string_escape "$LAN_IP_ARG")")
     sed -i \
       -e "s|# services.coder-nixos.lanIp = \"192.168.x.x\";|services.coder-nixos.lanIp = \"${esc_ip}\";|" \
@@ -609,17 +725,20 @@ nix --extra-experimental-features 'nix-command flakes' \
   run "$REPO_DIR#disko" -- \
   --mode disko --flake "$REPO_DIR#${HOSTNAME_ARG}"
 
-mountpoint -q /mnt || { echo "disko did not mount /mnt" >&2; exit 1; }
+mountpoint -q /mnt || {
+  echo "disko did not mount /mnt" >&2
+  exit 1
+}
 
 # Activate any swap partitions disko just formatted on the target. nixos-install
 # can spike past available RAM (notably Coder's vite frontend bundle); on a
 # small-RAM live USB the OOM killer fires without swap.
-mapfile -t SWAP_PARTS < <(blkid -t TYPE=swap -o device 2>/dev/null \
-  | awk -v disk="$DISK_ARG" 'index($0, disk) == 1')
+mapfile -t SWAP_PARTS < <(blkid -t TYPE=swap -o device 2>/dev/null |
+  awk -v disk="$DISK_ARG" 'index($0, disk) == 1')
 for sp in "${SWAP_PARTS[@]}"; do
   echo "=== Activating swap on $sp ==="
-  swapon "$sp" 2>/dev/null \
-    || echo "  (swapon $sp failed, continuing without it)"
+  swapon "$sp" 2>/dev/null ||
+    echo "  (swapon $sp failed, continuing without it)"
 done
 
 # ── Bake the repo into the installed system at /etc/nixos-repo ─────────────
@@ -661,13 +780,16 @@ ln -sf /etc/nixos-repo/flake.nix /mnt/etc/nixos/flake.nix
 #     building it in the host store first would balloon tmpfs/RAM. Keep the
 #     original `nixos-install --flake` which builds/downloads straight into
 #     /mnt.
-if [[ "${CODER_BOX_FROM_IMAGE:-0}" == "1" ]]; then
+if [[ ${CODER_BOX_FROM_IMAGE:-0} == "1" ]]; then
   echo "=== Building system closure (reusing the baked store) ==="
   SYSTEM_TOPLEVEL=$(nix --extra-experimental-features 'nix-command flakes' \
     build --no-link --print-out-paths \
     --option download-buffer-size 268435456 \
     "/mnt/etc/nixos-repo#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel")
-  [[ -n "$SYSTEM_TOPLEVEL" ]] || { echo "failed to build system closure" >&2; exit 1; }
+  [[ -n $SYSTEM_TOPLEVEL ]] || {
+    echo "failed to build system closure" >&2
+    exit 1
+  }
 
   echo "=== Copying system closure into /mnt ==="
   nix --extra-experimental-features 'nix-command flakes' \

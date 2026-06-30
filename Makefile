@@ -121,7 +121,7 @@ define box_instantiate
 	@echo
 endef
 
-.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw
+.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 
@@ -160,3 +160,31 @@ appliance/raw:
 	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "raw";,)
 appliance/raw/%:
 	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "raw";,$*)
+
+# ── fmt / fmt/check / lint — format & lint Nix + shell via treefmt ────────────
+# All three drive the flake's `nix fmt` (treefmt) but select different tools
+# with `-f` so formatting and linting stay separate (treefmt config lives in
+# treefmt.nix):
+#   * formatters: nixfmt, shfmt
+#   * linters:    statix, deadnix, shellcheck
+#
+#   make fmt        format in place (writes files) — run before committing.
+#   make fmt/check  format CHECK only (no writes); `--ci` fails with a diff if
+#                   anything is unformatted. This is what the CI format job runs.
+#   make lint       lint check only; `--ci` fails with a diff (statix/deadnix) or
+#                   findings (shellcheck). This is what the CI lint job runs.
+#   make lint/fix   apply lint autofixes in place (statix + deadnix). shellcheck
+#                   has no autofixer, so run `make lint` after to see anything
+#                   left to fix by hand.
+#
+# `--ci` implies --no-cache + --fail-on-change, so the check targets never
+# silently mutate the tree. Needs flakes + nix-command (the box_* helpers assume
+# the same).
+fmt:
+	$(NIX) fmt -- -f nixfmt,shfmt
+fmt/check:
+	$(NIX) fmt -- --ci -f nixfmt,shfmt
+lint:
+	$(NIX) fmt -- --ci -f statix,deadnix,shellcheck
+lint/fix:
+	$(NIX) fmt -- -f statix,deadnix

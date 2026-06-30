@@ -28,10 +28,11 @@
 
 {
   imports = [
-    ../../nixos/disko-standard.nix       # 1 GB ESP + ZFS root pool single-disk layout
-    ../../nixos/_images/box-turnkey.nix  # shared turn-key config (login + Coder bootstrap)
-    ../../nixos/_images/base/disk.nix    # bundles each disk image with its .sha256 (diskoImagesDir)
-  ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
+    ../../nixos/disko-standard.nix # 1 GB ESP + ZFS root pool single-disk layout
+    ../../nixos/_images/box-turnkey.nix # shared turn-key config (login + Coder bootstrap)
+    ../../nixos/_images/base/disk.nix # bundles each disk image with its .sha256 (diskoImagesDir)
+  ]
+  ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get
   # no folder-name injection from flake.nix and inherit the central default

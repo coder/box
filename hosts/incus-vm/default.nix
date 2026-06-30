@@ -14,7 +14,7 @@
 
 {
   imports = [
-    ./incus-vm.nix          # QEMU guest agents, networkd DHCP, no desktop stack
+    ./incus-vm.nix # QEMU guest agents, networkd DHCP, no desktop stack
     # /etc/nixos/coder.nix  # only needed if this VM is also a coder-agent workspace
   ]
   # local.nix (per-host secrets: admin creds, LAN IP, SSH keys) and

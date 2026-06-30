@@ -14,17 +14,22 @@
 #
 # Apply: sudo nixos-rebuild switch
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
-  cfg      = config.services.coder-nixos.podman;
+  cfg = config.services.coder-nixos.podman;
   coderUid = 991;
 in
 {
   options.services.coder-nixos.podman = {
     enable = lib.mkOption {
-      type        = lib.types.bool;
-      default     = false;
+      type = lib.types.bool;
+      default = false;
       description = ''
         Expose the host's rootless Podman socket inside k3s workspace pods so
         that `docker` works in workspaces without a privileged container or a
@@ -49,12 +54,12 @@ in
     # accessible to anyone who can reach the path.
     systemd.services.coder-podman-socket-fix = {
       description = "Ensure rootless Podman socket is accessible for workspace pods";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "user@${toString coderUid}.service" ];
-      wants       = [ "user@${toString coderUid}.service" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "user@${toString coderUid}.service" ];
+      wants = [ "user@${toString coderUid}.service" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
 
         ExecStart = pkgs.writeShellScript "coder-podman-socket-fix" ''

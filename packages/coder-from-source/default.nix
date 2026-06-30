@@ -32,33 +32,33 @@ let
       version = "2.31.11";
       src = fetchFromGitHub {
         owner = "coder";
-        repo  = "coder";
-        rev   = "v${version}";
-        hash  = "sha256-w174ZOgoeXloVBBLGm3cW75OxHHUemdmE2RBcDJyDqw=";
+        repo = "coder";
+        rev = "v${version}";
+        hash = "sha256-w174ZOgoeXloVBBLGm3cW75OxHHUemdmE2RBcDJyDqw=";
       };
-      vendorHash  = "sha256-mQOSe6xim6YH8zYPCJ8ncHKfYUImsb6oc4zk5B77oo8=";
+      vendorHash = "sha256-mQOSe6xim6YH8zYPCJ8ncHKfYUImsb6oc4zk5B77oo8=";
       pnpmDepsHash = "sha256-JlbjDBeBtz7vA9Ol+NmUdNYROzop9C6vnoDEsJTp0W8=";
     };
     mainline = rec {
       version = "2.33.1";
       src = fetchFromGitHub {
         owner = "coder";
-        repo  = "coder";
-        rev   = "v${version}";
-        hash  = "sha256-wNPCwEvqB2mx/XN7Rm5E/jomcAWf70bWXjCTSo3CoV8=";
+        repo = "coder";
+        rev = "v${version}";
+        hash = "sha256-wNPCwEvqB2mx/XN7Rm5E/jomcAWf70bWXjCTSo3CoV8=";
       };
-      vendorHash  = "sha256-3bLyx/lHLQKfx6902+pyM8f1IDNA1iuNk3FcQyKCUL4=";
+      vendorHash = "sha256-3bLyx/lHLQKfx6902+pyM8f1IDNA1iuNk3FcQyKCUL4=";
       pnpmDepsHash = "sha256-6hES7O2SXmMuE4d2Yj5isQati9pMiv+O6C32AtH3PCI=";
     };
     rc = rec {
       version = "2.34.0-rc.0";
       src = fetchFromGitHub {
         owner = "coder";
-        repo  = "coder";
-        rev   = "v${version}";
-        hash  = "sha256-ibaR0ps+luMCtUpLf1KgDhwsrexC4MD+ZGKY7NG2Xmg=";
+        repo = "coder";
+        rev = "v${version}";
+        hash = "sha256-ibaR0ps+luMCtUpLf1KgDhwsrexC4MD+ZGKY7NG2Xmg=";
       };
-      vendorHash   = "sha256-3bLyx/lHLQKfx6902+pyM8f1IDNA1iuNk3FcQyKCUL4=";
+      vendorHash = "sha256-3bLyx/lHLQKfx6902+pyM8f1IDNA1iuNk3FcQyKCUL4=";
       pnpmDepsHash = "sha256-6hES7O2SXmMuE4d2Yj5isQati9pMiv+O6C32AtH3PCI=";
     };
   };
@@ -70,55 +70,82 @@ let
     "ts_omit_kube"
   ];
   mkSlimBinary =
-    { goos, goarch, goarm, ... }:
+    {
+      goos,
+      goarch,
+      goarm,
+      ...
+    }:
     (buildGoModule rec {
-      pname       = "coder-slim-${goos}-${if goarm == "" then goarch else "${goarch}v${goarm}"}";
-      version     = channels.${channel}.version;
-      src         = channels.${channel}.src;
-      vendorHash  = channels.${channel}.vendorHash;
+      pname = "coder-slim-${goos}-${if goarm == "" then goarch else "${goarch}v${goarm}"}";
+      inherit (channels.${channel}) version;
+      inherit (channels.${channel}) src;
+      inherit (channels.${channel}) vendorHash;
       subPackages = [ subPackage ];
       ldflags = [
-        "-s" "-w"
+        "-s"
+        "-w"
         "-X=github.com/coder/coder/v2/buildinfo.tag=${version}"
-      ] ++ lib.optional agplLicensed "-X=github.com/coder/coder/v2/buildinfo.agpl=true";
+      ]
+      ++ lib.optional agplLicensed "-X=github.com/coder/coder/v2/buildinfo.agpl=true";
       tags = [ "slim" ] ++ omitTags;
-      env = { GOOS = goos; GOARCH = goarch; GOARM = goarm; CGO_ENABLED = "0"; };
-      postBuild = lib.optionalString
-        (goos != stdenvNoCC.hostPlatform.go.GOOS
-          || goarch != stdenvNoCC.hostPlatform.go.GOARCH
-          || goarm  != stdenvNoCC.hostPlatform.go.GOARM)
-        ''
-          dir=$GOPATH/bin/''${GOOS}_''${GOARCH}
-          if [[ -n "$(shopt -s nullglob; echo $dir/*)" ]]; then mv $dir/* $dir/..; fi
-          if [[ -d $dir ]]; then rmdir $dir; fi
-        '';
+      env = {
+        GOOS = goos;
+        GOARCH = goarch;
+        GOARM = goarm;
+        CGO_ENABLED = "0";
+      };
+      postBuild =
+        lib.optionalString
+          (
+            goos != stdenvNoCC.hostPlatform.go.GOOS
+            || goarch != stdenvNoCC.hostPlatform.go.GOARCH
+            || goarm != stdenvNoCC.hostPlatform.go.GOARM
+          )
+          ''
+            dir=$GOPATH/bin/''${GOOS}_''${GOARCH}
+            if [[ -n "$(shopt -s nullglob; echo $dir/*)" ]]; then mv $dir/* $dir/..; fi
+            if [[ -d $dir ]]; then rmdir $dir; fi
+          '';
       doCheck = false;
-    }).overrideAttrs (_: prev: {
-      env = prev.env // { GOOS = goos; GOARCH = goarch; GOARM = goarm; };
-    });
+    }).overrideAttrs
+      (
+        _: prev: {
+          env = prev.env // {
+            GOOS = goos;
+            GOARCH = goarch;
+            GOARM = goarm;
+          };
+        }
+      );
   slimTargets = [
-    "windows_amd64" "windows_arm64"
-    "linux_amd64"   "linux_arm64"   "linux_arm_7"
-    "darwin_amd64"  "darwin_arm64"
+    "windows_amd64"
+    "windows_arm64"
+    "linux_amd64"
+    "linux_arm64"
+    "linux_arm_7"
+    "darwin_amd64"
+    "darwin_arm64"
   ];
   slimBinaries = map (
     target:
     let
-      parts  = lib.splitString "_" target;
-      goos   = builtins.elemAt parts 0;
+      parts = lib.splitString "_" target;
+      goos = builtins.elemAt parts 0;
       goarch = builtins.elemAt parts 1;
-      goarm  = lib.optionalString (builtins.length parts > 2) (builtins.elemAt parts 2);
-    in rec {
+      goarm = lib.optionalString (builtins.length parts > 2) (builtins.elemAt parts 2);
+    in
+    rec {
       inherit target;
-      extension  = lib.optionalString (goos == "windows") ".exe";
-      binary     = "coder${extension}";
+      extension = lib.optionalString (goos == "windows") ".exe";
+      binary = "coder${extension}";
       outputPath = "coder-${goos}-${if goarm == "" then goarch else "${goarch}v${goarm}"}${extension}";
-      pkg        = mkSlimBinary { inherit goos goarch goarm; };
+      pkg = mkSlimBinary { inherit goos goarch goarm; };
     }
   ) slimTargets;
   bundle = stdenvNoCC.mkDerivation {
-    pname   = "coder-slim-bundle";
-    version = channels.${channel}.version;
+    pname = "coder-slim-bundle";
+    inherit (channels.${channel}) version;
     nativeBuildInputs = [ zstd ];
     unpackPhase = lib.concatStringsSep "\n" (
       [ "runHook preUnpack" ]
@@ -140,16 +167,20 @@ let
     '';
   };
 in
-(buildGoModule rec {
-  pname   = "coder";
-  version = channels.${channel}.version;
-  src     = channels.${channel}.src;
+buildGoModule rec {
+  pname = "coder";
+  inherit (channels.${channel}) version;
+  inherit (channels.${channel}) src;
 
   frontend = stdenvNoCC.mkDerivation (finalAttrs: {
-    pname   = "coder-frontend";
+    pname = "coder-frontend";
     inherit version;
-    src     = "${src}/site";
-    nativeBuildInputs = [ nodejs_22 pnpmConfigHook pnpm_nodejs_22 ];
+    src = "${src}/site";
+    nativeBuildInputs = [
+      nodejs_22
+      pnpmConfigHook
+      pnpm_nodejs_22
+    ];
     buildPhase = ''
       runHook preBuild
       NODE_OPTIONS=--max-old-space-size=4096 pnpm build
@@ -162,19 +193,24 @@ in
     '';
     pnpmDeps = fetchPnpmDeps {
       inherit (finalAttrs) pname version src;
-      pnpm           = pnpm_nodejs_22;
+      pnpm = pnpm_nodejs_22;
       fetcherVersion = 3;
-      hash           = channels.${channel}.pnpmDepsHash;
+      hash = channels.${channel}.pnpmDepsHash;
     };
   });
 
-  nativeBuildInputs = [ installShellFiles makeBinaryWrapper ];
-  vendorHash  = channels.${channel}.vendorHash;
+  nativeBuildInputs = [
+    installShellFiles
+    makeBinaryWrapper
+  ];
+  inherit (channels.${channel}) vendorHash;
   subPackages = [ subPackage ];
   ldflags = [
-    "-s" "-w"
+    "-s"
+    "-w"
     "-X=github.com/coder/coder/v2/buildinfo.tag=${version}"
-  ] ++ lib.optional agplLicensed "-X=github.com/coder/coder/v2/buildinfo.agpl=true";
+  ]
+  ++ lib.optional agplLicensed "-X=github.com/coder/coder/v2/buildinfo.agpl=true";
   tags = [ "embed" ] ++ omitTags;
   preBuild = ''
     cp -r ${frontend}/* site/out
@@ -191,9 +227,12 @@ in
   doCheck = false;
   meta = {
     description = "Provision remote development environments via Terraform";
-    homepage    = "https://coder.com";
-    license     = if agplLicensed then lib.licenses.agpl3Only else lib.licenses.unfreeRedistributable;
+    homepage = "https://coder.com";
+    license = if agplLicensed then lib.licenses.agpl3Only else lib.licenses.unfreeRedistributable;
     mainProgram = "coder";
-    maintainers = with lib.maintainers; [ ghuntley kylecarbs ];
+    maintainers = with lib.maintainers; [
+      ghuntley
+      kylecarbs
+    ];
   };
-})
+}

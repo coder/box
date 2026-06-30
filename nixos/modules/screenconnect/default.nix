@@ -18,21 +18,24 @@
 # Re-installation is triggered whenever the installerUrl changes (stamp file
 # tracks a hash of the URL). The service is managed by systemd.
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.coder-nixos.screenconnect;
 
   # Tools used by the install script — resolved to Nix store paths so the
   # service's PATH doesn't need to contain them.
-  bash    = "${pkgs.bash}/bin/bash";
-  curl    = "${pkgs.curl}/bin/curl";
-  dpkg    = "${pkgs.dpkg}/bin/dpkg-deb";
-  perl    = "${pkgs.perl}/bin/perl";
-  grep    = "${pkgs.gnugrep}/bin/grep";
-  awk     = "${pkgs.gawk}/bin/awk";
-  tar     = "${pkgs.gnutar}/bin/tar";
-  coreutils = pkgs.coreutils;
+  bash = "${pkgs.bash}/bin/bash";
+  curl = "${pkgs.curl}/bin/curl";
+  dpkg = "${pkgs.dpkg}/bin/dpkg-deb";
+  perl = "${pkgs.perl}/bin/perl";
+  grep = "${pkgs.gnugrep}/bin/grep";
+  tar = "${pkgs.gnutar}/bin/tar";
 
   installScript = pkgs.writeScript "screenconnect-install" ''
     #!${bash}
@@ -132,13 +135,14 @@ let
     echo "screenconnect: installation complete (GUID=$GUID)"
   '';
 
-in {
+in
+{
   options.services.coder-nixos.screenconnect = {
     enable = lib.mkEnableOption "ScreenConnect (ConnectWise Control) remote access client";
 
     installerUrl = lib.mkOption {
-      type        = lib.types.str;
-      default     = "";
+      type = lib.types.str;
+      default = "";
       description = ''
         Full URL to the ScreenConnect client installer shell script.
         This is the "ScreenConnect.ClientSetup.sh" URL from your server's
@@ -155,7 +159,7 @@ in {
     assertions = [
       {
         assertion = cfg.installerUrl != "";
-        message   = "services.coder-nixos.screenconnect.installerUrl must be set when enable = true";
+        message = "services.coder-nixos.screenconnect.installerUrl must be set when enable = true";
       }
     ];
 
@@ -166,15 +170,15 @@ in {
     # Skips if already installed (stamp file matches URL hash).
     systemd.services.screenconnect-install = {
       description = "Install ScreenConnect client from installer URL";
-      after       = [ "network-online.target" ];
-      wants       = [ "network-online.target" ];
-      before      = [ "screenconnect.service" ];
-      wantedBy    = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      before = [ "screenconnect.service" ];
+      wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart       = installScript;
+        ExecStart = installScript;
       };
     };
 
@@ -183,20 +187,29 @@ in {
     # Type=forking because the init script daemonises the java process.
     systemd.services.screenconnect = {
       description = "ScreenConnect remote access client";
-      after       = [ "network.target" "screenconnect-install.service" "display-manager.service" ];
-      requires    = [ "screenconnect-install.service" ];
-      wantedBy    = [ "multi-user.target" ];
+      after = [
+        "network.target"
+        "screenconnect-install.service"
+        "display-manager.service"
+      ];
+      requires = [ "screenconnect-install.service" ];
+      wantedBy = [ "multi-user.target" ];
 
-      path = [ pkgs.temurin-bin-21 pkgs.coreutils pkgs.procps pkgs.gnugrep ];
+      path = [
+        pkgs.temurin-bin-21
+        pkgs.coreutils
+        pkgs.procps
+        pkgs.gnugrep
+      ];
 
       serviceConfig = {
-        Type            = "forking";
+        Type = "forking";
         # DISPLAY is set; XAUTHORITY is discovered dynamically in ExecStart
         # because the xauth filename changes on every boot.
-        Environment     = [ "DISPLAY=:0" ];
+        Environment = [ "DISPLAY=:0" ];
         # ExecStart is resolved dynamically — the GUID is not known at eval time.
         # We use a small wrapper that finds the installed init script.
-        ExecStart  = pkgs.writeShellScript "screenconnect-start" ''
+        ExecStart = pkgs.writeShellScript "screenconnect-start" ''
           set -euo pipefail
           INIT=$(echo /etc/init.d/connectwisecontrol-*)
           if [ ! -f "$INIT" ]; then
@@ -214,7 +227,7 @@ in {
           fi
           exec "$INIT" start
         '';
-        ExecStop   = pkgs.writeShellScript "screenconnect-stop" ''
+        ExecStop = pkgs.writeShellScript "screenconnect-stop" ''
           set -euo pipefail
           INIT=$(echo /etc/init.d/connectwisecontrol-*)
           [ -f "$INIT" ] && exec "$INIT" stop || true
@@ -228,8 +241,8 @@ in {
           fi
         '';
         RemainAfterExit = true;
-        Restart         = "on-failure";
-        RestartSec      = "10s";
+        Restart = "on-failure";
+        RestartSec = "10s";
       };
     };
   };

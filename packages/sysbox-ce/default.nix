@@ -9,16 +9,22 @@
 # build platform is selected automatically. Update hashes with:
 #   nix store prefetch-file https://github.com/nestybox/sysbox/releases/download/v0.6.7/sysbox-ce_0.6.7.linux_<arch>.deb
 
-{ lib, stdenvNoCC, fetchurl, dpkg }:
+{
+  lib,
+  stdenvNoCC,
+  fetchurl,
+  dpkg,
+}:
 
 let
   version = "0.6.7";
 
   arch =
     {
-      "x86_64-linux"  = "amd64";
+      "x86_64-linux" = "amd64";
       "aarch64-linux" = "arm64";
-    }.${stdenvNoCC.hostPlatform.system}
+    }
+    .${stdenvNoCC.hostPlatform.system}
       or (throw "packages/sysbox-ce: unsupported system ${stdenvNoCC.hostPlatform.system}");
 
   debHashes = {
@@ -27,14 +33,14 @@ let
   };
 
   deb = fetchurl {
-    url  = "https://github.com/nestybox/sysbox/releases/download/v${version}/sysbox-ce_${version}.linux_${arch}.deb";
+    url = "https://github.com/nestybox/sysbox/releases/download/v${version}/sysbox-ce_${version}.linux_${arch}.deb";
     hash = debHashes.${arch};
   };
 
 in
 
 stdenvNoCC.mkDerivation {
-  pname   = "sysbox-ce";
+  pname = "sysbox-ce";
   inherit version;
 
   src = deb;
@@ -52,13 +58,16 @@ stdenvNoCC.mkDerivation {
   '';
 
   # Binaries are statically linked — verified with readelf -d (no dynamic section).
-  dontStrip        = true;
+  dontStrip = true;
   dontAutoPatchelf = true;
 
   meta = {
     description = "Sysbox CE ${version} — sysbox-mgr, sysbox-fs";
-    homepage    = "https://github.com/nestybox/sysbox";
-    license     = lib.licenses.asl20;
-    platforms   = [ "x86_64-linux" "aarch64-linux" ];
+    homepage = "https://github.com/nestybox/sysbox";
+    license = lib.licenses.asl20;
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
   };
 }

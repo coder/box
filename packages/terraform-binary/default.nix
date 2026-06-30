@@ -15,10 +15,11 @@
 # Update: bump `version` and refresh both per-arch hashes with
 #   nix store prefetch-file https://releases.hashicorp.com/terraform/<ver>/terraform_<ver>_linux_<arch>.zip
 
-{ lib
-, stdenvNoCC
-, fetchurl
-, unzip
+{
+  lib,
+  stdenvNoCC,
+  fetchurl,
+  unzip,
 }:
 
 let
@@ -29,9 +30,10 @@ let
   # GitHub/HashiCorp release asset arch suffix, keyed by Nix system.
   arch =
     {
-      "x86_64-linux"  = "amd64";
+      "x86_64-linux" = "amd64";
       "aarch64-linux" = "arm64";
-    }.${stdenvNoCC.hostPlatform.system}
+    }
+    .${stdenvNoCC.hostPlatform.system}
       or (throw "terraform-binary.nix: unsupported system ${stdenvNoCC.hostPlatform.system}");
 
   hashes = {
@@ -40,11 +42,11 @@ let
   };
 in
 stdenvNoCC.mkDerivation {
-  pname   = "terraform";
+  pname = "terraform";
   inherit version;
 
   src = fetchurl {
-    url  = "https://releases.hashicorp.com/terraform/${version}/terraform_${version}_linux_${arch}.zip";
+    url = "https://releases.hashicorp.com/terraform/${version}/terraform_${version}_linux_${arch}.zip";
     hash = hashes.${arch};
   };
 
@@ -61,15 +63,18 @@ stdenvNoCC.mkDerivation {
   '';
 
   # Release binary is statically linked and stripped; don't touch it.
-  dontStrip    = true;
+  dontStrip = true;
   dontPatchELF = true;
 
   meta = {
     description = "Tool for building, changing, and versioning infrastructure (official release binary)";
-    homepage    = "https://www.terraform.io/";
-    license     = lib.licenses.bsl11;
-    mainProgram  = "terraform";
-    platforms   = [ "x86_64-linux" "aarch64-linux" ];
+    homepage = "https://www.terraform.io/";
+    license = lib.licenses.bsl11;
+    mainProgram = "terraform";
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
     sourceProvenance = with lib.sourceTypes; [ binaryNativeCode ];
   };
 }

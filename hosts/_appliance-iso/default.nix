@@ -19,8 +19,10 @@
 { lib, ... }:
 
 {
-  imports = [ ../../nixos/_images/appliance/iso.nix ]
-    ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
+  imports = [
+    ../../nixos/_images/appliance/iso.nix
+  ]
+  ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get
   # no folder-name injection from flake.nix and inherit the central default
