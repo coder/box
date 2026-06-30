@@ -70,22 +70,24 @@
       cp -r ${pkgs.nixos-grub2-theme} "$out"
       chmod -R u+w "$out"
 
-      # 1) Shrink the menu box so its opaque pixmap stops at ~62% of the screen,
-      #    leaving the lower area free for the footer (stock fills to the
-      #    progress bar and would cover it).
+      # 1) Shrink the menu box so its opaque pixmap stops at ~46% of the screen
+      #    (~1/3 shorter than the previous 62%), leaving the lower area free for
+      #    the footer (stock fills to the progress bar and would cover it).
       substituteInPlace "$out/theme.txt" \
-        --replace-fail 'height = 100%-3%-100-3%-3%-32-3%' 'height = 62%-100-6%'
+        --replace-fail 'height = 100%-3%-100-3%-3%-32-3%' 'height = 46%-100-6%'
 
-      # 2) Footer label in the freed area, centred horizontally, above the
-      #    timeout progress bar (which lives at ~95%). Quoted heredoc so the
+      # 2) Footer label just BELOW the shrunk box (top ~50%), so it sits close to
+      #    the menu rather than far down the screen. Its left/width match the menu
+      #    box (left = 50%-400, width = 800) so the centred text lines up with the
+      #    rectangle instead of spanning the full screen. Quoted heredoc so the
       #    build shell does no expansion; the text is already substituted by Nix
       #    (and quote/backslash-sanitised).
       cat >> "$out/theme.txt" <<'EOF'
 
       + label {
-      	top = 78%
-      	left = 5%
-      	width = 90%
+      	top = 50%
+      	left = 50%-400
+      	width = 800
       	align = "center"
       	color = "#232627"
       	font = "DejaVu Regular"
