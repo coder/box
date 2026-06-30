@@ -35,6 +35,67 @@
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
 
+  # ── Show the build identity on the boot screen as a footer label ─────────────
+  # The boot-menu ENTRY can't carry the build identity: it's a single,
+  # non-wrapping line in a fixed-width GRUB/isolinux menu, so a long PR title
+  # overflows and gets clipped (and widening the menu makes it span the whole
+  # screen). Instead, render coderBox.bootLabel — e.g.
+  # "Coder Box - PR #46: <title> (abc123@branch)", or just
+  # "Coder Box - abc123@branch" with no PR — as a standalone GRUB *label*
+  # (boot-screen chrome, not a selectable entry) shown as a footer UNDER the menu.
+  # The label is ALWAYS present (every build has a commit/branch), so this also
+  # makes the footer visible on local/non-PR builds, not just CI PR previews.
+  #
+  # Key gotcha: the stock theme's boot_menu fills almost the whole height with an
+  # opaque white pixmap (boot_menu_*.png), and GRUB paints that box OVER any
+  # label that overlaps it — so a footer placed inside the box is invisible. The
+  # menu only has a handful of entries, so we shrink boot_menu's height to free
+  # the lower area of the screen, then place the label there on the plain
+  # background (dark text, good contrast). The menu WIDTH is untouched (still the
+  # stock 800px), so the menu doesn't blow up horizontally like the earlier
+  # full-width experiment. EFI/GRUB only; the BIOS/isolinux text menu has no
+  # theme, so there the identity is available off-menu via /etc/coder-box-pr +
+  # the installer console banner.
+  #
+  # substituteInPlace uses --replace-fail so a future nixpkgs theme reflow fails
+  # the build loudly instead of silently dropping the footer.
+  isoImage.grubTheme =
+    let
+      inherit (config.coderBox) bootLabel;
+      # theme.txt wraps the text in double quotes; neutralise quotes/backslashes
+      # so an arbitrary title can't break the theme parser.
+      bootLabelThemeSafe = builtins.replaceStrings [ "\"" "\\" ] [ "'" "" ] bootLabel;
+    in
+    pkgs.runCommand "coder-box-grub2-theme" { } ''
+      cp -r ${pkgs.nixos-grub2-theme} "$out"
+      chmod -R u+w "$out"
+
+      # 1) Shrink the menu box so its opaque pixmap stops at ~46% of the screen
+      #    (~1/3 shorter than the previous 62%), leaving the lower area free for
+      #    the footer (stock fills to the progress bar and would cover it).
+      substituteInPlace "$out/theme.txt" \
+        --replace-fail 'height = 100%-3%-100-3%-3%-32-3%' 'height = 46%-100-6%'
+
+      # 2) Footer label just BELOW the shrunk box (top ~50%), so it sits close to
+      #    the menu rather than far down the screen. Its left/width match the menu
+      #    box (left = 50%-400, width = 800) so the centred text lines up with the
+      #    rectangle instead of spanning the full screen. Quoted heredoc so the
+      #    build shell does no expansion; the text is already substituted by Nix
+      #    (and quote/backslash-sanitised).
+      cat >> "$out/theme.txt" <<'EOF'
+
+      + label {
+      	top = 50%
+      	left = 50%-400
+      	width = 800
+      	align = "center"
+      	color = "#232627"
+      	font = "DejaVu Regular"
+      	text = "${bootLabelThemeSafe}"
+      }
+      EOF
+    '';
+
   # Tools install.sh expects at runtime, shipped in the base layer so every ISO
   # flavour (installer + appliance) has them:
   #   - dmidecode: read SMBIOS/DMI (board model, BIOS, serial) for the

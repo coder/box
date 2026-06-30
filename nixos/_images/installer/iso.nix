@@ -25,8 +25,6 @@
 
 let
   boxRev = config.coderBox.rev;
-  # Short form for the boot-menu label (full 40-char hashes are unwieldy there).
-  boxRevShort = if boxRev == "unknown" then "unknown" else builtins.substring 0 12 boxRev;
 
   # Launcher run inside the preopened terminal: cd into the baked repo, run the
   # installer as root (passwordless sudo is configured in configuration.nix),
@@ -42,6 +40,12 @@ let
     # wins (install.sh ignores --interactive when --yes is given).
     set -- --interactive "$@"
     echo "=== Coder Box installer ==="
+    # For PR-preview builds, print the full PR identity (number + untruncated
+    # title) here, off the boot menu, where it can't be clipped. The file only
+    # exists on PR builds (see ../box-turnkey.nix), so non-PR images print nothing.
+    if [ -s /etc/coder-box-pr ]; then
+      echo "Image: $(cat /etc/coder-box-pr)"
+    fi
     echo "Running: sudo ./install.sh $*"
     echo
     if sudo ./install.sh "$@"; then
@@ -72,27 +76,23 @@ in
     # ── Image identity ─────────────────────────────────────────────────────────
     isoImage.volumeID = "CODER_BOX_INSTALLER";
     # Boot-menu label (BIOS/isolinux + EFI/grub). See ../appliance/iso.nix for
-    # the format; leading space is required. Include the short build revision so
-    # the boot menu shows exactly which image you're booting. For a PR preview
-    # build (coderBox.prMenuSuffix non-empty) the PR reference comes first and
-    # the commit hash moves to the very end, so the label reads
-    # " - Coder Box Installer - PR #46: <title> (<rev>)"; otherwise it's just
-    # " - Coder Box Installer (<rev>)".
-    isoImage.appendToMenuLabel =
-      if config.coderBox.prMenuSuffix != "" then
-        " - Coder Box Installer${config.coderBox.prMenuSuffix} (${boxRevShort})"
-      else
-        " - Coder Box Installer (${boxRevShort})";
+    # the format; leading space is required. The label is the same for every
+    # build — " - Coder Box Installer" — with NO build identity: the commit
+    # short-sha (and, for PR previews, the PR number + title) live in the
+    # boot-screen footer label instead (coderBox.bootLabel, see ../base/iso.nix),
+    # so the menu entry stays clean. The full "PR #N: <title>" is also printed by
+    # the installer console banner and recorded at /etc/coder-box-pr.
+    isoImage.appendToMenuLabel = " - Coder Box Installer";
 
     # Record the full build revision for install.sh to print (the baked repo
     # under /etc/nixos-repo has no .git, so the script can't get it from git).
     environment.etc."coder-box-rev".text = boxRev + "\n";
 
     # ISO file name, with arch suffix (e.g. coder-box-installer-x86_64-linux.iso).
-    # See ../appliance/iso.nix for why this is mkForce + arch-suffixed. The
-    # PR-slug suffix (coderBox.prFileSuffix) is empty unless this is a PR preview
-    # build (e.g. coder-box-installer-x86_64-linux-pr-fix-the-thing.iso).
-    image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}${config.coderBox.prFileSuffix}";
+    # See ../appliance/iso.nix for why this is mkForce + arch-suffixed. The name
+    # is constant for a given flavour/arch — it carries NO PR identity, so a PR
+    # preview ISO has the exact same file name as a release build.
+    image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";
 
     # ── Auto-launch a full-screen terminal that runs the installer ─────────────
     # box-turnkey.nix autologins straight into the GNOME (Wayland) desktop. For

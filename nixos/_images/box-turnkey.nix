@@ -22,49 +22,58 @@
 }:
 
 let
-  # ── Pretty version name helpers ──────────────────────────────────────────────
-  # The "pretty version name" is the human-facing identity woven into the boot
-  # menu label and the ISO file name. For a PR preview build CI injects the PR
-  # title (coderBox.prTitle); when present it is appended so reviewers can tell
-  # at a glance which PR an image came from. Empty for tag/main/local builds.
-  inherit (config.coderBox) prTitle;
+  # ── PR-preview identity helpers ──────────────────────────────────────────────
+  # For a PR-preview build CI injects the PR title + number (coderBox.prTitle /
+  # coderBox.prNumber) so reviewers can tell which PR an image came from. This is
+  # deliberately kept OFF the boot menu and OUT of the ISO file name:
+  #   * The boot-menu entry is a single, non-wrapping line in a fixed-width
+  #     GRUB/isolinux menu — a long title overflows and gets clipped, and
+  #     widening the menu makes it span the whole screen, which looks broken.
+  #   * The ISO file name stays constant per flavour/arch regardless of build,
+  #     so it's predictable and downloads/links never change.
+  # The PR identity is surfaced off-menu instead: recorded at /etc/coder-box-pr
+  # and printed by the installer console banner (see prFull / ../installer/iso.nix).
+  # Empty for tag/main/local builds.
+  inherit (config.coderBox)
+    prTitle
+    prNumber
+    rev
+    branch
+    ;
 
-  # Boot-menu form: keep the raw title but neutralise the few characters that
-  # would break the generated isolinux/grub menu (quotes, backslashes, newlines).
-  menuTitle = builtins.replaceStrings [ "\n" "\"" "\\" ] [ " " "'" "" ] prTitle;
-
-  # File-name form: lowercase the title and reduce it to a [a-z0-9-] slug so the
-  # ISO name stays portable. Collapse dash runs, trim edges, and cap the length
-  # so the file name doesn't balloon for a long PR title.
-  slugify =
-    title:
-    let
-      lower = lib.toLower title;
-      safe = lib.concatMapStrings (c: if builtins.match "[a-z0-9]" c != null then c else "-") (
-        lib.stringToCharacters lower
-      );
-      collapse =
-        s:
-        let
-          r = builtins.replaceStrings [ "--" ] [ "-" ] s;
-        in
-        if r == s then s else collapse r;
-      capped =
-        let
-          c = collapse safe;
-        in
-        if builtins.stringLength c > 40 then builtins.substring 0 40 c else c;
-    in
-    lib.removeSuffix "-" (lib.removePrefix "-" capped);
-
-  prSlug = slugify prTitle;
-
-  # PR number (the GitHub PR "ID"). CI injects it alongside the title; included
-  # in both the menu label ("#46") and the file name ("-46") when present so an
-  # image can be traced straight back to its PR. Empty for non-PR builds.
-  inherit (config.coderBox) prNumber;
+  # Flatten newlines so the identity stays a single line in the file / banner.
+  prTitleClean = builtins.replaceStrings [ "\n" ] [ " " ] prTitle;
   prNumMenu = lib.optionalString (prNumber != "") " #${prNumber}";
-  prNumFile = lib.optionalString (prNumber != "") "-${prNumber}";
+
+  # Full PR identity for off-menu surfaces (baked image record + installer
+  # console banner): "PR #46: <full title>". Empty for non-PR builds.
+  prFull = lib.optionalString (prTitle != "") "PR${prNumMenu}: ${prTitleClean}";
+
+  # Short build revision for the human-facing version stamp (full 40-char hashes
+  # are unwieldy on the boot screen). Keep the "-dirty" suffix if present.
+  revShort =
+    if rev == "unknown" || rev == "" then
+      "unknown"
+    else
+      let
+        dirty = lib.hasSuffix "-dirty" rev;
+        bare = lib.removeSuffix "-dirty" rev;
+      in
+      builtins.substring 0 12 bare + lib.optionalString dirty "-dirty";
+
+  # A detached-HEAD checkout (the default for GitHub Actions' PR builds) reports
+  # branch "HEAD", which is noise — treat it like an unknown branch and drop it.
+  branchClean = if branch == "HEAD" || branch == "unknown" then "" else branch;
+
+  # Version stamp woven into the boot-screen label, using the conventional
+  # "<short-sha>@<branch>" form (branch omitted when unknown/detached).
+  versionStamp = revShort + lib.optionalString (branchClean != "") "@${branchClean}";
+
+  # Boot-screen label (the GRUB footer in ../base/iso.nix). ALWAYS present so the
+  # image's identity is visible on the boot screen regardless of build type:
+  #   with a PR:    "Coder Box - PR #46: <title> (<short-sha>@<branch>)"
+  #   without a PR: "Coder Box - <short-sha>@<branch>"
+  bootLabel = "Coder Box - " + (if prFull != "" then "${prFull} (${versionStamp})" else versionStamp);
 in
 {
   imports = [
@@ -92,6 +101,17 @@ in
     description = "Git revision this Coder box image was built from.";
   };
 
+  # Git branch this image was built from, woven into the boot-screen label as
+  # "<short-sha>@<branch>". Like coderBox.rev, the Makefile injects it (path
+  # flakerefs carry no git metadata); CI can also set CODER_BOX_BRANCH for PR
+  # builds where the checkout is a detached HEAD. Empty/"HEAD" is treated as
+  # unknown and dropped from the label.
+  options.coderBox.branch = lib.mkOption {
+    type = lib.types.str;
+    default = builtins.getEnv "CODER_BOX_BRANCH";
+    description = "Git branch this Coder box image was built from (woven into the boot-screen label when known).";
+  };
+
   # PR title for a pull-request preview build. CI sets it via the
   # CODER_BOX_PR_TITLE environment variable (read here under `--impure`, which
   # every image build already uses), so an arbitrary title never has to be
@@ -101,7 +121,7 @@ in
   options.coderBox.prTitle = lib.mkOption {
     type = lib.types.str;
     default = builtins.getEnv "CODER_BOX_PR_TITLE";
-    description = "Pull-request title this image was built for, woven into the pretty version name (boot-menu label + ISO file name) when non-empty.";
+    description = "Pull-request title this image was built for. Surfaced off the boot menu (recorded at /etc/coder-box-pr and printed by the installer console) when non-empty; never woven into the menu label or ISO file name, which carry only the PR number.";
   };
 
   # PR number (GitHub PR "ID") for a pull-request preview build. CI sets it via
@@ -112,24 +132,29 @@ in
     description = "Pull-request number (ID) this image was built for, woven into the pretty version name when non-empty.";
   };
 
-  # Derived, read-only fragments so every image flavour appends the PR identity
-  # the same way. coderBox.prMenuSuffix goes on the boot-menu label;
-  # coderBox.prFileSuffix goes on the ISO file name. Both carry the PR number
-  # ("#46" / "-46") when known, and are empty when there's no PR title, so
-  # they're safe to interpolate unconditionally.
-  options.coderBox.prMenuSuffix = lib.mkOption {
+  # Full, untruncated PR identity ("PR #46: <title>") for surfaces that AREN'T
+  # the boot menu — recorded at /etc/coder-box-pr (below) and printed by the
+  # installer console banner (../installer/iso.nix). The boot-menu label and the
+  # ISO file name deliberately carry NO PR identity (neither title nor number):
+  # the menu entry stays a clean "Coder Box <flavour> (<rev>)" and the file name
+  # is constant per flavour/arch. Empty for non-PR builds.
+  options.coderBox.prFull = lib.mkOption {
     type = lib.types.str;
     internal = true;
     readOnly = true;
-    default = lib.optionalString (prTitle != "") " - PR${prNumMenu}: ${menuTitle}";
-    description = "Boot-menu label fragment naming the PR this image was built for (empty for non-PR builds).";
+    default = prFull;
+    description = "Full PR identity (number + untruncated title) for off-menu surfaces (empty for non-PR builds).";
   };
-  options.coderBox.prFileSuffix = lib.mkOption {
+
+  # Boot-screen label (the GRUB footer in ../base/iso.nix), e.g.
+  # "Coder Box - PR #46: <title> (abc123def456@my-branch)" or, without a PR,
+  # "Coder Box - abc123def456@my-branch". Always non-empty.
+  options.coderBox.bootLabel = lib.mkOption {
     type = lib.types.str;
     internal = true;
     readOnly = true;
-    default = lib.optionalString (prSlug != "") "-pr${prNumFile}-${prSlug}";
-    description = "ISO file-name fragment naming the PR this image was built for (empty for non-PR builds).";
+    default = bootLabel;
+    description = "Boot-screen footer label (build identity: PR + short-sha@branch); always present.";
   };
 
   config = {
@@ -166,6 +191,14 @@ in
         && !(lib.hasSuffix ".iso" base)
         && !(lib.hasSuffix ".qcow2" base)
         && !(lib.hasSuffix ".raw" base);
+    };
+
+    # Record the full PR identity (number + untruncated title) in the image so
+    # it's available off the boot menu, where the title can't fit. The installer
+    # console prints it (../installer/iso.nix); on any flavour it can also be
+    # read with `cat /etc/coder-box-pr`. Only created for PR-preview builds.
+    environment.etc."coder-box-pr" = lib.mkIf (prFull != "") {
+      text = prFull + "\n";
     };
 
     # Make the pinned nixpkgs resolvable on the box so `nix` / flake commands

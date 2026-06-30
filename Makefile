@@ -40,6 +40,21 @@
 NIX   ?= nix
 FLAKE ?= .
 
+# Every target below drives the flake CLI (`nix build`, `nix flake check`,
+# `nix fmt`), so enable the flakes + nix-command interface here instead of
+# making each developer turn it on in their global nix.conf. Two deliberate
+# choices keep this non-invasive:
+#   * `--extra-experimental-features` is ADDITIVE — it ORs with whatever the
+#     user's nix.conf already enables, so it never replaces their settings
+#     (unlike the non-`extra-` form, which overwrites the whole list).
+#   * We APPEND to $(NIX) with `+=` rather than redefining it, so an env-set
+#     `NIX` (e.g. a custom binary/path) is preserved — we add the flag, we
+#     don't clobber the user's choice. (`+=` honours an environment NIX; a
+#     command-line `make NIX=…` still wins outright, as expected.)
+# Set `NIX_EXTRA_EXPERIMENTAL_FEATURES=` (empty) to opt out without editing this file.
+NIX_EXTRA_EXPERIMENTAL_FEATURES ?= nix-command flakes
+NIX += $(if $(strip $(NIX_EXTRA_EXPERIMENTAL_FEATURES)),--extra-experimental-features "$(NIX_EXTRA_EXPERIMENTAL_FEATURES)")
+
 # Build parallelism + substituter tuning, applied to every Nix invocation
 # (build and eval) via NIX_PERF_FLAGS below. max-jobs runs independent
 # derivations concurrently and cores=0 lets each build use all CPUs;
@@ -70,6 +85,13 @@ NIX_OUTPUT_FLAGS ?=
 # suffix when the working tree has uncommitted changes. Empty if not a git
 # checkout (the module then falls back to self.rev / "unknown").
 GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
+
+# Git branch injected into images alongside the rev, for the boot-screen label's
+# "<short-sha>@<branch>" stamp (coderBox.branch). Prefer an explicit
+# CODER_BOX_BRANCH (CI sets it from github.head_ref, since a PR checkout is a
+# detached HEAD where `rev-parse --abbrev-ref HEAD` would just say "HEAD"); fall
+# back to the local branch name. Empty/"HEAD" is dropped from the label.
+GIT_BRANCH := $(or $(CODER_BOX_BRANCH),$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null))
 
 # Optional PR title + number woven into the image's pretty version name
 # (boot-menu label + ISO file name) via coderBox.prTitle / coderBox.prNumber.
@@ -119,7 +141,7 @@ iso_comp_field = $(if $(ISO_COMPRESSION),isoImage.squashfsCompression = "$(ISO_C
 #   $(1) = host                 (nixosConfigurations.<host>)
 #   $(2) = arch token           (empty = builder's native arch)
 #   $(3) = extra module fields  (nix attrset body, may be empty)
-box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(2),$(call norm_arch,$(2)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build
+box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(2),$(call norm_arch,$(2)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; coderBox.branch = "$(GIT_BRANCH)"; $(3) } ]; }).config.system.build
 
 define box_build
 	@mkdir -p out
