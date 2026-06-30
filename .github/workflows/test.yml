@@ -130,8 +130,16 @@ jobs:
 
   # Job key is "Images" so the matrix shows as "Matrix: Images". `needs: plan`
   # also means these matrix jobs are skipped if the plan job fails.
+  #
+  # Skipped entirely on push to main: main commits never build full ISOs (only
+  # PRs with a test-*-iso label or manual dispatch do), and the drv-only
+  # instantiation this job would otherwise run is already covered by the
+  # `Flake eval` job (`nix flake check --all-systems` evaluates the same
+  # nixosConfigurations). So a main commit just runs the cheap flake check —
+  # no image build runners at all. PRs and workflow_dispatch still build.
   Images:
     needs: plan
+    if: github.event_name != 'push'
     # Short, readable name — the per-kind plan is computed by the `plan` job
     # above. e.g. "Build installer & appliance ISO (x86_64-linux)" or
     # "Build installer ISO & appliance DRV (aarch64-linux)".
