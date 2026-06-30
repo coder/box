@@ -40,6 +40,20 @@
 NIX   ?= nix
 FLAKE ?= .
 
+# Build parallelism + substituter tuning, applied to every Nix invocation
+# (build and eval) via NIX_PERF_FLAGS below. max-jobs runs independent
+# derivations concurrently and cores=0 lets each build use all CPUs;
+# http-connections / max-substitution-jobs widen the binary-cache fetch
+# pipeline (Nix defaults 25 / 16) so restoring a large closure isn't the
+# bottleneck. Override per-invocation, e.g. `make installer/iso NIX_MAX_JOBS=4`.
+NIX_MAX_JOBS         ?= auto
+NIX_CORES            ?= 0
+NIX_HTTP_CONNECTIONS ?= 128
+NIX_MAX_SUBST_JOBS   ?= 32
+NIX_PERF_FLAGS = --max-jobs $(NIX_MAX_JOBS) --cores $(NIX_CORES) \
+  --option http-connections $(NIX_HTTP_CONNECTIONS) \
+  --option max-substitution-jobs $(NIX_MAX_SUBST_JOBS)
+
 # Build revision injected into images (installer boot menu, /etc/coder-box-rev).
 # We build through a path flakeref (getFlake (toString ./.)), which carries no
 # git metadata, so self.rev/dirtyRev are empty — compute the rev here and pass
@@ -100,7 +114,7 @@ box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(
 
 define box_build
 	@mkdir -p out
-	$(NIX) build --impure --no-write-lock-file --print-out-paths \
+	$(NIX) build $(NIX_PERF_FLAGS) --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
@@ -134,7 +148,7 @@ endef
 # built output to anchor, and the .drv itself is a GC root until next gc.
 #   $(1) = host   $(2) = system.build.<attr>   $(3) = extra module fields   $(4) = arch token
 define box_instantiate
-	$(NIX) eval --impure --no-write-lock-file --raw --expr \
+	$(NIX) eval $(NIX_PERF_FLAGS) --impure --no-write-lock-file --raw --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2).drvPath'
 	@echo
 endef
