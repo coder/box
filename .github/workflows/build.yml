@@ -1,5 +1,9 @@
-# Build images — builds the installer AND appliance ISOs for every supported
-# architecture.
+# Build images — evaluates the flake and builds the installer AND appliance
+# ISOs for every supported architecture.
+#
+# A `flake` job runs `nix flake check` (cheap, builds nothing) so Nix typos /
+# bad references / type errors surface fast; the matrix build jobs then realise
+# (or, drv-only, just instantiate) the images.
 #
 # Each arch builds on a native runner; the build itself runs inside the
 # official `nixos/nix` container via `docker run`. We deliberately do NOT put
@@ -53,6 +57,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Flake evaluation — cheap, builds nothing. `nix flake check --no-build
+  # --all-systems` evaluates every flake output (nixosConfigurations, packages,
+  # …) for all declared systems (x86_64 + aarch64), catching typos / bad
+  # references / type errors in seconds. The per-kind ISO derivations are
+  # instantiated separately by the `iso` job below (its drv-only path), so this
+  # covers the flake outputs that path doesn't touch. Runs inside the nixos/nix
+  # container via `docker run` (that image lacks a glibc loader for GitHub's
+  # bundled Node, so the checkout JS action stays on the host runner).
+  flake:
+    name: Flake eval
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: nix flake check
+        run: |
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              nix flake check --impure --no-build --all-systems
+            '
+
   # Tiny pre-job that decides, per kind, whether to build the full ISO or just
   # instantiate the derivation, and assembles a short human title for the build
   # job. Doing this here (rather than inline in the build job's `name:`) keeps
