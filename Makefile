@@ -98,6 +98,17 @@ define box_iso
 	@for sha in 'out/$(subst /,-,$@)'/iso/*.iso.sha256; do cat "$$sha"; done
 endef
 
+# Disk-image build helper: box_build with the `diskoImagesDir` build product,
+# which is the disk image bundled with its SHA-256 sidecar in one store output
+# (see nixos/_images/base/disk.nix). So `--out-link` surfaces out/<target>/ with
+# both <name>.<format> and <name>.<format>.sha256, and a single
+# `cp -L out/<target>/*` copies them together. After the build we log each
+# image's checksum. Same arg shape as box_build (callers pass $(2)=diskoImagesDir).
+define box_disk
+	$(call box_build,$(1),$(2),$(3),$(4))
+	@for sha in 'out/$(subst /,-,$@)'/*.sha256; do cat "$$sha"; done
+endef
+
 # Instantiate-only counterpart to box_build: same flake expr, but evaluates
 # `.drvPath` so Nix fully evaluates the config and writes the .drv to the store
 # WITHOUT realising the (multi-GB) image. Cheap CI validation that the Nix is
@@ -140,12 +151,12 @@ appliance/drv/%:
 
 # ── appliance/qcow2 — persistent disk image (hosts/_appliance-disk) ──────────
 appliance/qcow2:
-	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,)
+	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "qcow2";,)
 appliance/qcow2/%:
-	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "qcow2";,$*)
+	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "qcow2";,$*)
 
 # ── appliance/raw — persistent disk image, dd-able (hosts/_appliance-disk) ────
 appliance/raw:
-	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,)
+	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "raw";,)
 appliance/raw/%:
-	$(call box_build,_appliance-disk,diskoImages,disko.imageBuilder.imageFormat = "raw";,$*)
+	$(call box_disk,_appliance-disk,diskoImagesDir,disko.imageBuilder.imageFormat = "raw";,$*)
