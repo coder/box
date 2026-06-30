@@ -1,5 +1,5 @@
-# Build images — evaluates the flake and builds the installer AND appliance
-# ISOs for every supported architecture.
+# Test Nix — evaluates the flake and builds the installer AND appliance ISOs
+# for every supported architecture.
 #
 # A `flake` job runs `nix flake check` (cheap, builds nothing) so Nix typos /
 # bad references / type errors surface fast; the matrix build jobs then realise
@@ -31,7 +31,7 @@
 # so the build job's name stays readable. The build job always runs (drafts just
 # do derivations). Verification artifacts are short-lived (1 day).
 
-name: Build images
+name: Test Nix
 
 on:
   push:

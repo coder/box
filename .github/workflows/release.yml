@@ -6,7 +6,7 @@
 #   * run manually from the Actions tab (workflow_dispatch), supplying a tag
 #     and optionally a ref/commit to build.
 #
-# Like build.yml, each arch builds natively and the build runs inside the
+# Like test.yml, each arch builds natively and the build runs inside the
 # `nixos/nix` container via `docker run` (the whole job can't use `container:`
 # because that image lacks a glibc loader for GitHub's bundled Node, which
 # breaks every JS action). Bare `make <target>` resolves to the runner's native
