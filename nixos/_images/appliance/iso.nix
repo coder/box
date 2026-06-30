@@ -20,7 +20,12 @@
 # admin bootstrap) lives in ../box-turnkey.nix. This module only sets the
 # appliance's image identity.
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 {
   imports = [
