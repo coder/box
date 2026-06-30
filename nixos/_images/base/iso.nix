@@ -35,6 +35,65 @@
   boot.loader.systemd-boot.enable = lib.mkForce false;
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
 
+  # ── Show the PR identity on the boot screen (PR-preview builds only) ──────────
+  # A PR title can't live in the boot-menu entry: that entry is a single,
+  # non-wrapping line in a fixed-width GRUB/isolinux menu, so a long title
+  # overflows and gets clipped (and widening the menu makes it span the whole
+  # screen). Instead, for a PR-preview build, surface the full "PR #N: <title>"
+  # as a standalone GRUB *label* — boot-screen chrome, not a selectable entry —
+  # shown as a footer UNDER the menu.
+  #
+  # Key gotcha: the stock theme's boot_menu fills almost the whole height with an
+  # opaque white pixmap (boot_menu_*.png), and GRUB paints that box OVER any
+  # label that overlaps it — so a footer placed inside the box is invisible. The
+  # menu only has a handful of entries, so we shrink boot_menu's height to free
+  # the lower third of the screen, then place the label there on the plain
+  # background (dark text, good contrast). The menu WIDTH is untouched (still the
+  # stock 800px), so the menu doesn't blow up horizontally like the earlier
+  # full-width experiment. EFI/GRUB only; the BIOS/isolinux text menu has no
+  # theme, so there the identity is available off-menu via /etc/coder-box-pr +
+  # the installer console banner. Non-PR builds use the stock theme untouched.
+  #
+  # substituteInPlace uses --replace-fail so a future nixpkgs theme reflow fails
+  # the build loudly instead of silently dropping the footer.
+  isoImage.grubTheme =
+    let
+      inherit (config.coderBox) prFull;
+      # theme.txt wraps the text in double quotes; neutralise quotes/backslashes
+      # so an arbitrary title can't break the theme parser.
+      prFullThemeSafe = builtins.replaceStrings [ "\"" "\\" ] [ "'" "" ] prFull;
+    in
+    if prFull == "" then
+      pkgs.nixos-grub2-theme
+    else
+      pkgs.runCommand "coder-box-grub2-theme-pr" { } ''
+        cp -r ${pkgs.nixos-grub2-theme} "$out"
+        chmod -R u+w "$out"
+
+        # 1) Shrink the menu box so its opaque pixmap stops at ~62% of the screen,
+        #    leaving the lower area free for the footer (stock fills to the
+        #    progress bar and would cover it).
+        substituteInPlace "$out/theme.txt" \
+          --replace-fail 'height = 100%-3%-100-3%-3%-32-3%' 'height = 62%-100-6%'
+
+        # 2) Footer label in the freed area, centred horizontally, just above the
+        #    timeout progress bar (which lives at ~95%). Quoted heredoc so the
+        #    build shell does no expansion; the PR text is already substituted by
+        #    Nix (and quote/backslash-sanitised).
+        cat >> "$out/theme.txt" <<'EOF'
+
+        + label {
+        	top = 78%
+        	left = 5%
+        	width = 90%
+        	align = "center"
+        	color = "#232627"
+        	font = "DejaVu Regular"
+        	text = "${prFullThemeSafe}"
+        }
+        EOF
+      '';
+
   # Tools install.sh expects at runtime, shipped in the base layer so every ISO
   # flavour (installer + appliance) has them:
   #   - dmidecode: read SMBIOS/DMI (board model, BIOS, serial) for the
