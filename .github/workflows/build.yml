@@ -92,6 +92,7 @@ jobs:
   # (${{ matrix.system }})` — so the raw "Matrix:" preview / a skipped job shows
   # something readable instead of a wall of inlined label checks.
   plan:
+    name: Plan image targets
     runs-on: ubuntu-latest
     outputs:
       # "true"/"false" per kind: realise the full ISO, or (drv-only) instantiate.
@@ -124,7 +125,9 @@ jobs:
             echo "kinds=$kinds"
           } >>"$GITHUB_OUTPUT"
 
-  iso:
+  # Job key is "Images" so the matrix shows as "Matrix: Images". `needs: plan`
+  # also means these matrix jobs are skipped if the plan job fails.
+  Images:
     needs: plan
     # Short, readable name — the per-kind plan is computed by the `plan` job
     # above. e.g. "Build installer & appliance ISO (x86_64-linux)" or
