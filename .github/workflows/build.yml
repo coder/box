@@ -23,10 +23,9 @@
 #       test-appliance-iso) is applied; otherwise (draft, or no label) that kind
 #       is just instantiated (.drv, cheap validation, no image). The `labeled`
 #       trigger means adding the label kicks off the full build.
-# The job always runs (drafts just do derivations) so its name renders rather
-# than showing a skipped job's raw name expression; the job name shows the
-# per-kind plan (installer/appliance → ISO or DRV). Verification artifacts are
-# short-lived (1 day).
+# A tiny `plan` job computes the per-kind plan once and a short title fragment
+# so the build job's name stays readable. The build job always runs (drafts just
+# do derivations). Verification artifacts are short-lived (1 day).
 
 name: Build images
 
@@ -54,44 +53,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Tiny pre-job that decides, per kind, whether to build the full ISO or just
+  # instantiate the derivation, and assembles a short human title for the build
+  # job. Doing this here (rather than inline in the build job's `name:`) keeps
+  # that name a SHORT expression — `Build ${{ needs.plan.outputs.kinds }}
+  # (${{ matrix.system }})` — so the raw "Matrix:" preview / a skipped job shows
+  # something readable instead of a wall of inlined label checks.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      # "true"/"false" per kind: realise the full ISO, or (drv-only) instantiate.
+      installer_full: ${{ steps.plan.outputs.installer_full }}
+      appliance_full: ${{ steps.plan.outputs.appliance_full }}
+      # Human title fragment, e.g. "installer & appliance ISO" or
+      # "installer ISO & appliance DRV".
+      kinds: ${{ steps.plan.outputs.kinds }}
+    steps:
+      - id: plan
+        # Non-PR events (push, manual dispatch) build both full; a PR builds a
+        # kind's full ISO only when it is ready-for-review (non-draft) AND its
+        # label is applied. Draft PRs / unlabelled kinds → drv-only.
+        env:
+          INSTALLER_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
+          APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
+        run: |
+          isuf=$([ "$INSTALLER_FULL" = "true" ] && echo ISO || echo DRV)
+          asuf=$([ "$APPLIANCE_FULL" = "true" ] && echo ISO || echo DRV)
+          # Always join the two kinds with "&". Collapse to a shared suffix when
+          # they match, otherwise spell each out.
+          if [ "$isuf" = "$asuf" ]; then
+            kinds="installer & appliance $isuf"
+          else
+            kinds="installer $isuf & appliance $asuf"
+          fi
+          {
+            echo "installer_full=$INSTALLER_FULL"
+            echo "appliance_full=$APPLIANCE_FULL"
+            echo "kinds=$kinds"
+          } >>"$GITHUB_OUTPUT"
+
   iso:
-    # Title shows, at a glance, what each kind is doing: "ISO" (full image) or
-    # "DRV" (derivation only). When both kinds match it collapses to a shared
-    # suffix, e.g.
-    #   Build installer & appliance ISO (x86_64-linux)   # both full
-    #   Build installer & appliance DRV (aarch64-linux)  # both drv-only
-    # and when they differ it spells out each, e.g.
-    #   Build installer ISO + appliance DRV (x86_64-linux)
-    # HACK: the literal "Build" prefix is OUTSIDE the ${{ }} expression on
-    # purpose, so the very first thing you see is "Build" even before GitHub
-    # interpolates the name (e.g. the raw "Matrix:" preview, or a skipped job,
-    # which shows the un-evaluated expression).
-    # NOTE: the `env` context is not available in a job name, so the label/draft
-    # checks are inlined here — they mirror INSTALLER_FULL/APPLIANCE_FULL below.
-    name: >-
-      Build ${{ (
-            (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')))
-            == (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')))
-          )
-          && format('installer & appliance {0} ({1})',
-               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
-               matrix.system)
-          || format('installer {0} + appliance {1} ({2})',
-               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso'))) && 'ISO' || 'DRV',
-               (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso'))) && 'ISO' || 'DRV',
-               matrix.system) }}
-    # NOTE: no job-level draft skip. Skipping the whole job on draft PRs (a) left
-    # the job name unrendered/garbage and (b) meant a draft built nothing here.
-    # Instead the per-kind FULL flags below treat drafts as "no full build", so
-    # the job always runs and a draft just instantiates derivations (cheap).
+    needs: plan
+    # Short, readable name — the per-kind plan is computed by the `plan` job
+    # above. e.g. "Build installer & appliance ISO (x86_64-linux)" or
+    # "Build installer ISO & appliance DRV (aarch64-linux)".
+    name: Build ${{ needs.plan.outputs.kinds }} (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     env:
-      # Per kind: realise the full ISO, or (drv-only) just instantiate. Non-PR
-      # events (push, manual dispatch) build both full; a PR builds a kind's
-      # full ISO only when it is ready-for-review (non-draft) AND its label is
-      # applied. Draft PRs → drv-only for both. Steps below branch on these.
-      INSTALLER_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
-      APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
+      # Resolved per-kind plan from the `plan` job. Steps below branch on these.
+      INSTALLER_FULL: ${{ needs.plan.outputs.installer_full }}
+      APPLIANCE_FULL: ${{ needs.plan.outputs.appliance_full }}
     strategy:
       fail-fast: false
       matrix:
