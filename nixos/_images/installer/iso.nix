@@ -112,6 +112,13 @@ in
       OnlyShowIn=GNOME;
     '';
 
+    # The installed box autostarts Firefox on the Coder dashboard
+    # (configuration.nix → coder-box-open-dashboard.desktop). The installer has
+    # no running Coder stack (coder/coder-redirect are disabled below), so drop
+    # that autostart here — the installer session should only run the installer
+    # console above.
+    environment.etc."xdg/autostart/coder-box-open-dashboard.desktop".enable = lib.mkForce false;
+
     # ── Never prompt for a password to get in ──────────────────────────────────
     # Login is already passwordless (box-turnkey coderbox autologin + passwordless
     # sudo). Disable GNOME's screen lock / idle blanking (idle auto-lock and the

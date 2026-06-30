@@ -42,6 +42,26 @@ let
       }
     }
   '';
+
+  # Session-startup launcher: open the local Coder dashboard in Firefox.
+  # Wired up as an XDG autostart entry (see environment.etc below) on the
+  # INSTALLED box only — the installer ISO disables it (installer/iso.nix), and
+  # its coder-redirect/coder services are off there anyway. coder-redirect binds
+  # :80 only AFTER it has discovered the *.try.coder.app tunnel URL and serves a
+  # 302 to it, so opening http://127.0.0.1 before then would just show a
+  # connection-refused page. Poll :80 (up to ~2 min) before launching so the
+  # first paint is the dashboard, not an error. `firefox` resolves from the
+  # session PATH (the wrapped build that programs.firefox.enable installs).
+  openDashboard = pkgs.writeShellScript "coder-box-open-dashboard" ''
+    export PATH=/run/current-system/sw/bin:$PATH
+    for _ in $(seq 1 60); do
+      if ${pkgs.curl}/bin/curl -s -o /dev/null --max-time 2 http://127.0.0.1; then
+        break
+      fi
+      sleep 2
+    done
+    exec firefox http://127.0.0.1
+  '';
 in
 {
   # Per-host modules (hardware detection via facter, disk layout via disko,
@@ -232,9 +252,44 @@ in
     environment.gnome.excludePackages = [ pkgs.gnome-tour ];
     programs.dconf.profiles.user.databases = [
       {
-        settings."org/gnome/shell".enabled-extensions = [ "no-overview@fthx" ];
+        settings = {
+          "org/gnome/shell".enabled-extensions = [ "no-overview@fthx" ];
+
+          # ── Pinned dash icons: match the old KDE Plasma 6 taskbar ───────────
+          # Plasma 6 shipped its Icons-Only Task Manager pre-pinned with three
+          # launchers: System Settings, the file manager (Dolphin), and the web
+          # browser (Firefox). Reproduce that exact set as the GNOME dash
+          # favourites so the box looks the same after the KDE→GNOME switch.
+          # GNOME's own NixOS default (Epiphany/Geary/Calendar/Music/Nautilus)
+          # is mostly apps we don't even install, so override it outright.
+          #   System Settings → org.gnome.Settings  (gnome-control-center)
+          #   Dolphin         → org.gnome.Nautilus  (GNOME Files)
+          #   Firefox         → firefox
+          "org/gnome/shell".favorite-apps = [
+            "org.gnome.Settings.desktop"
+            "org.gnome.Nautilus.desktop"
+            "firefox.desktop"
+          ];
+        };
       }
     ];
+
+    # ── Open the Coder dashboard on login ──────────────────────────────────────
+    # On the installed box the coderbox user autologins into GNOME; open Firefox
+    # on http://127.0.0.1 (the local coder-redirect → tunnel URL) at session
+    # start so the dashboard is up and ready. See openDashboard in the let block
+    # for the wait-for-:80 logic. The installer ISO overrides this away
+    # (installer/iso.nix) since it has no running Coder stack.
+    environment.etc."xdg/autostart/coder-box-open-dashboard.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Open Coder Dashboard
+      Comment=Open the local Coder dashboard in Firefox on login
+      Exec=${openDashboard}
+      Terminal=false
+      X-GNOME-Autostart-enabled=true
+      OnlyShowIn=GNOME;
+    '';
 
     # ── Audio ─────────────────────────────────────────────────────────────────
     services.pulseaudio.enable = false;
