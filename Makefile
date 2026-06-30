@@ -121,7 +121,7 @@ define box_instantiate
 	@echo
 endef
 
-.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint
+.PHONY: installer/iso installer/drv appliance/iso appliance/drv appliance/qcow2 appliance/raw fmt fmt/check lint lint/fix
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 
@@ -173,6 +173,9 @@ appliance/raw/%:
 #                   anything is unformatted. This is what the CI format job runs.
 #   make lint       lint check only; `--ci` fails with a diff (statix/deadnix) or
 #                   findings (shellcheck). This is what the CI lint job runs.
+#   make lint/fix   apply lint autofixes in place (statix + deadnix). shellcheck
+#                   has no autofixer, so run `make lint` after to see anything
+#                   left to fix by hand.
 #
 # `--ci` implies --no-cache + --fail-on-change, so the check targets never
 # silently mutate the tree. Needs flakes + nix-command (the box_* helpers assume
@@ -183,3 +186,5 @@ fmt/check:
 	$(NIX) fmt -- --ci -f nixfmt,shfmt
 lint:
 	$(NIX) fmt -- --ci -f statix,deadnix,shellcheck
+lint/fix:
+	$(NIX) fmt -- -f statix,deadnix
