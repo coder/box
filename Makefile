@@ -66,7 +66,7 @@ norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 #   $(4) = arch token           (empty = builder's native arch)
 # The built image lives in /nix/store (always — that's how Nix works), but
 # `--out-link` plants a GC-root symlink to it under ./out (named after the
-# target, e.g. out/appliance-iso, out/appliance-raw-aarch64-linux). That's the
+# target, e.g. out/appliance-qcow2, out/appliance-raw-aarch64-linux). That's the
 # native, non-copy way to surface the result in the repo: ./out/<link> points
 # straight at the store path, and being a GC root it won't be garbage-collected.
 # ./out is gitignored.
@@ -87,20 +87,15 @@ define box_build
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
 
-# ISO build helper: box_build, then emit a SHA-256 sidecar for each produced
-# ISO. iso-image.nix lands the image under <out-link>/iso/<name>.iso, which
-# lives in the read-only /nix/store; we write the checksum into the writable
-# ./out dir as out/<name>.iso.sha256, with the bare basename (no store path) so
-# `sha256sum -c` verifies against the ISO sitting next to it. Same arg shape as
-# box_build (always $(2)=isoImage here).
+# ISO build helper: just box_build with the `isoImageDir` build product, which
+# is the ISO bundled with its SHA-256 sidecar in one store output (see
+# nixos/_images/base/iso.nix). So `--out-link` surfaces out/<target>/iso/ with
+# both <name>.iso and <name>.iso.sha256, and a single `cp -L out/<target>/iso/*`
+# copies them together. After the build we log each ISO's checksum. Same arg
+# shape as box_build (callers pass $(2)=isoImageDir).
 define box_iso
 	$(call box_build,$(1),$(2),$(3),$(4))
-	@link='out/$(subst /,-,$@)'; \
-	for iso in "$$link"/iso/*.iso; do \
-	  base=$$(basename "$$iso"); \
-	  ( cd "$$link/iso" && sha256sum "$$base" ) > "out/$$base.sha256"; \
-	  echo "out/$$base.sha256"; \
-	done
+	@for sha in 'out/$(subst /,-,$@)'/iso/*.iso.sha256; do cat "$$sha"; done
 endef
 
 # Instantiate-only counterpart to box_build: same flake expr, but evaluates
@@ -121,9 +116,9 @@ endef
 
 # ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
 installer/iso:
-	$(call box_iso,_installer-iso,isoImage,,)
+	$(call box_iso,_installer-iso,isoImageDir,,)
 installer/iso/%:
-	$(call box_iso,_installer-iso,isoImage,,$*)
+	$(call box_iso,_installer-iso,isoImageDir,,$*)
 
 # ── installer/drv — instantiate the installer ISO derivation (no build) ───────
 installer/drv:
@@ -133,9 +128,9 @@ installer/drv/%:
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance_iso) ───────────
 appliance/iso:
-	$(call box_iso,_appliance_iso,isoImage,,)
+	$(call box_iso,_appliance_iso,isoImageDir,,)
 appliance/iso/%:
-	$(call box_iso,_appliance_iso,isoImage,,$*)
+	$(call box_iso,_appliance_iso,isoImageDir,,$*)
 
 # ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
 appliance/drv:
