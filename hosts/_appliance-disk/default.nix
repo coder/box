@@ -13,8 +13,10 @@
 #   make appliance/raw                   # raw  (dd-able straight to a drive)
 #   make appliance/qcow2/aarch64-linux   # cross-arch (needs a matching builder)
 #
-#   # without make, e.g. a raw image:
-#   nix build .#nixosConfigurations._appliance-disk.config.system.build.diskoImages
+#   # without make, e.g. a raw image (diskoImagesDir bundles the image with its
+#   # .sha256 sidecar, see nixos/_images/base/disk.nix; use .diskoImages for the
+#   # bare image without a checksum):
+#   nix build .#nixosConfigurations._appliance-disk.config.system.build.diskoImagesDir
 #   # (override disko.imageBuilder.imageFormat = "qcow2" for qcow2)
 #
 # This host is independent of install.sh; it shares the disk LAYOUT with
@@ -28,6 +30,7 @@
   imports = [
     ../../nixos/disko-standard.nix       # 1 GB ESP + ZFS root pool single-disk layout
     ../../nixos/_images/box-turnkey.nix  # shared turn-key config (login + Coder bootstrap)
+    ../../nixos/_images/base/disk.nix    # bundles each disk image with its .sha256 (diskoImagesDir)
   ] ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # No networking.hostName here on purpose: underscore-prefixed image hosts get
