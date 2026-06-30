@@ -29,7 +29,7 @@ sudo k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml ...
 # Service, package, or config changes — safe, non-destructive:
 cd /etc/nixos-repo && sudo nixos-rebuild switch --flake /etc/nixos-repo
 
-# Desktop stack (KDE, SDDM, Xorg, Wayland) — must reboot:
+# Desktop stack (GNOME, GDM, Wayland) — must reboot:
 cd /etc/nixos-repo && sudo nixos-rebuild boot --flake /etc/nixos-repo && sudo reboot
 ```
 
@@ -40,7 +40,7 @@ it and use `--flake .`) — see the `/etc/nixos` pitfall below.
 
 `nixos-rebuild switch` triggers the `coder-template-sync` activation script, which runs `terraform apply` in `coderd/` and pushes any template changes to Coder. The `/etc/coder/session-token` it needs is populated automatically by `coder-init-admin.service` on first boot, so this just works post-install.
 
-> **Note:** Earlier versions of this file said "never use `nixos-rebuild switch`". That was written when this box ran a KDE desktop as the primary interface and switch could corrupt an active Plasma session. For backend service/package changes — which is most of what we do — `switch` is fine. Only use `boot + reboot` if you're changing KDE, SDDM, Xorg, or display stack config.
+> **Note:** Earlier versions of this file said "never use `nixos-rebuild switch`". That was written when this box ran a desktop as the primary interface and switch could corrupt an active session. For backend service/package changes — which is most of what we do — `switch` is fine. Only use `boot + reboot` if you're changing GNOME, GDM, Wayland, or display stack config.
 
 ## Tailscale
 
@@ -199,7 +199,7 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 - **`coder` binary path** — the binary is in PATH via NixOS environment; don't hardcode nix store paths in scripts (they change with every package update).
 - **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree: `--flake /etc/nixos-repo` (or `cd /etc/nixos-repo && nixos-rebuild switch --flake .`).
 - **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/facter.json`.
-- **ScreenConnect blank screen** — if SC shows a black/blank view, SDDM may have fallen back to Wayland. Ensure `services.displayManager.sddm.wayland.enable = false` and `services.displayManager.defaultSession = "plasmax11"` in `configuration.nix`, then `nixos-rebuild boot && reboot`.
+- **ScreenConnect blank screen** — the box now runs GNOME on Wayland (GDM), and GNOME 49 dropped the Xorg session, so there is no X11 desktop to fall back to. ScreenConnect reaches `DISPLAY=:0` through XWayland (see `nixos/screenconnect.nix`) but **cannot screen-capture the Wayland compositor** through it, so the remote view may be black/blank. Capturing the GNOME session needs a Wayland-aware path (PipeWire/portal, e.g. `gnome-remote-desktop`); the X11 agent will connect but not mirror the desktop.
 
 ## Wildcard App Access (TODO)
 

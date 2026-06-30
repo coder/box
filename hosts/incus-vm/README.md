@@ -29,7 +29,7 @@ required.
   virtio drivers) — skip this for bare-metal
 - `systemd-networkd` DHCP on `enp5s0` (the virtio NIC Incus assigns to VMs on
   both x86_64 and aarch64)
-- Disables the KDE / PipeWire / printing / Avahi stack — a headless host only
+- Disables the GNOME / PipeWire / printing / Avahi stack — a headless host only
   needs Coder + PostgreSQL
 
 `default.nix` is the per-host entrypoint that imports `incus-vm.nix`, your

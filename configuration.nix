@@ -141,7 +141,7 @@ in
     # LAN and a *.try.coder.app tunnel. Suspending or hibernating drops the
     # NIC, so the machine silently falls off the network (no mDNS, no SSH,
     # tunnel dies) until someone physically wakes it. The shipped image runs a
-    # KDE desktop, which exposes Sleep/Hibernate actions, and a stray
+    # GNOME desktop, which exposes Sleep/Hibernate actions, and a stray
     # `systemctl suspend` / `systemctl hibernate` (or the matching D-Bus call)
     # would do the same. Mask the suspend, hibernate, and hybrid-sleep targets
     # so all of those paths become a no-op.
@@ -199,12 +199,18 @@ in
       LC_TIME = "en_US.UTF-8";
     };
 
-    # ── Desktop: KDE Plasma 6 ─────────────────────────────────────────────────
+    # ── Desktop: GNOME ────────────────────────────────────────────────────────
+    # GNOME 49 (the version in the pinned nixpkgs-25.11) is Wayland-only: the
+    # GNOME-on-Xorg session was dropped upstream (gnome-session now advertises
+    # `providedSessions = [ "gnome" ]` — no `gnome-xorg`), so there is no X11
+    # GNOME session to fall back to. GDM runs on Wayland by default and we keep
+    # it that way; there is therefore no `defaultSession`/`wayland.enable`
+    # plumbing as the SDDM/Plasma config (KDE Plasma 6 on Xorg) had before it.
+    # `services.xserver.enable` is still set so XWayland is available for legacy
+    # X11 clients (e.g. the optional ScreenConnect agent — see screenconnect.nix).
     services.xserver.enable = true;
-    services.displayManager.sddm.enable = true;
-    services.displayManager.sddm.wayland.enable = false;
-    services.displayManager.defaultSession = "plasmax11";
-    services.desktopManager.plasma6.enable = true;
+    services.displayManager.gdm.enable = true;
+    services.desktopManager.gnome.enable = true;
     services.xserver.xkb = {
       layout = "us";
       variant = "";

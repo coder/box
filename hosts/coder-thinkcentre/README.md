@@ -53,5 +53,5 @@
 | Nix | 2.31.4 |
 | Hostname | coder-thinkcentre |
 | User | coderbox |
-| Desktop | KDE Plasma 6 / SDDM |
+| Desktop | GNOME (Wayland) / GDM |
 | Repo path | /etc/nixos-repo |
