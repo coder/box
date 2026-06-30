@@ -91,23 +91,42 @@ in
 
     # ── Pre-create the coder-workspaces namespace ────────────────────────────
     # Templates deploy workloads into this namespace; they should not own it.
-    # Creating it here ensures it exists before any workspace build runs.
-    systemd.services.coder-k3s-namespace = {
-      description = "Create coder-workspaces namespace in k3s";
+    # Declared as a k3s auto-deploy manifest (rather than a kubectl one-shot
+    # service): k3s applies files in /var/lib/rancher/k3s/server/manifests/ via
+    # its addon controller as soon as the API server is up, so the namespace is
+    # created declaratively with no systemd unit for anything to order against.
+    services.k3s.manifests."coder-workspaces-namespace".content = {
+      apiVersion = "v1";
+      kind       = "Namespace";
+      metadata.name = "coder-workspaces";
+    };
+
+    # ── API readiness gate ───────────────────────────────────────────────────
+    # Polls /readyz until the API accepts requests. Consumers that need a live
+    # API (e.g. coder-logstream-kube) order after this instead of k3s.service,
+    # which reaches "active" before the API finishes coming up on a cold boot.
+    systemd.services.k3s-api-ready = {
+      description = "Wait for k3s API server /readyz";
       wantedBy    = [ "multi-user.target" ];
-      after       = [ "coder-k3s-kubeconfig-fix.service" ];
-      requires    = [ "coder-k3s-kubeconfig-fix.service" ];
+      after       = [ "k3s.service" ];
+      requires    = [ "k3s.service" ];
 
       serviceConfig = {
         Type            = "oneshot";
         RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "coder-k3s-namespace" ''
-          set -euo pipefail
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          ${pkgs.kubectl}/bin/kubectl create namespace coder-workspaces \
-            --dry-run=client -o yaml \
-            | ${pkgs.kubectl}/bin/kubectl apply -f -
-          echo "coder-workspaces namespace ready"
+        ExecStart = pkgs.writeShellScript "k3s-wait-api-ready" ''
+          echo "k3s-wait-api-ready: waiting for API server /readyz..."
+          for i in $(seq 1 120); do
+            if ${pkgs.curl}/bin/curl -sf -o /dev/null \
+                --cacert /var/lib/rancher/k3s/server/tls/server-ca.crt \
+                https://127.0.0.1:6443/readyz 2>/dev/null; then
+              echo "k3s-wait-api-ready: API ready after ''${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "k3s-wait-api-ready: timed out after 120s — continuing anyway"
+          exit 0
         '';
       };
     };
@@ -188,20 +207,18 @@ in
     };
 
     # ── Inject KUBECONFIG into coder.service ──────────────────────────────────
-    # Inject KUBECONFIG for Terraform's kubernetes provider, and order after
-    # coder-k3s-namespace so the coder-workspaces namespace exists before
-    # Coder's first workspace build (else it fails: namespace not found).
+    # Inject KUBECONFIG for Terraform's kubernetes provider.
     #
-    # NOTE: use `wants` (soft), NOT `requires` (hard), for the namespace dep.
-    # With `after` + `requires`, a failed coder-k3s-namespace.service (which
-    # runs `set -euo pipefail` and can flake on a cold first boot if the k3s
-    # API isn't accepting requests yet) would prevent coder.service from
-    # starting at all. We only want ordering here; the namespace service is
-    # already `wantedBy = multi-user.target`, so `wants` keeps it pulled in and
-    # ordered before coder without letting a transient flake block the server.
+    # coder.service is intentionally NOT ordered after k3s. The Coder server
+    # only needs Postgres to start and serve; gating it behind k3s (which can
+    # take a while to be ready on a cold boot) delayed the server, its tunnel
+    # URL and web UI for no reason.
+    #
+    # The coder-workspaces namespace is only needed for the *first workspace
+    # build*, not for the server to start. It is now created declaratively by
+    # k3s's addon controller from a manifest (see services.k3s.manifests
+    # above), so there is no systemd unit to order against.
     systemd.services.coder = {
-      after = [ "coder-k3s-namespace.service" ];
-      wants = [ "coder-k3s-namespace.service" ];
       environment = {
         KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       };

@@ -211,12 +211,19 @@ in
       };
     };
 
-    # ── kubeconfig ownership fix + API readiness wait ────────────────────
-    # Two ExecStartPost scripts run in order:
-    #   1. k3s-fix-kubeconfig  — waits for k3s.yaml and fixes ownership
-    #   2. k3s-wait-api-ready  — polls /readyz until the API accepts requests,
-    #      so local-path-provisioner and other in-cluster pods don't enter
-    #      CrashLoopBackOff before the API is up on cold boots.
+    # ── kubeconfig ownership fix ─────────────────────────────────────────
+    # A single fast ExecStartPost: wait for k3s.yaml and fix ownership so the
+    # coder user (UID 991) can read it. This is quick (the file appears within
+    # a second or two of the supervisor coming up), so k3s.service reaches
+    # "active" promptly.
+    #
+    # NOTE: the API /readyz poll deliberately lives in a SEPARATE
+    # k3s-api-ready.service below — NOT here. An ExecStartPost holds the unit
+    # in "activating" until it returns, so polling /readyz (up to ~2 min on a
+    # cold boot) inline made k3s.service itself appear to take ~2 min to start
+    # and stalled everything ordered after k3s.service. Splitting the wait out
+    # lets k3s.service go active fast while readiness-sensitive consumers order
+    # after the dedicated gate.
     systemd.services.k3s.serviceConfig.ExecStartPost = lib.mkAfter [
       (pkgs.writeShellScript "k3s-fix-kubeconfig" ''
         for i in $(seq 1 30); do
@@ -226,21 +233,40 @@ in
         chown root:coder /etc/rancher/k3s/k3s.yaml 2>/dev/null || true
         chmod 0640       /etc/rancher/k3s/k3s.yaml 2>/dev/null || true
       '')
-      (pkgs.writeShellScript "k3s-wait-api-ready" ''
-        echo "k3s-wait-api-ready: waiting for API server /readyz..."
-        for i in $(seq 1 120); do
-          if ${pkgs.curl}/bin/curl -sf -o /dev/null \
-              --cacert /var/lib/rancher/k3s/server/tls/server-ca.crt \
-              https://127.0.0.1:6443/readyz 2>/dev/null; then
-            echo "k3s-wait-api-ready: API ready after ''${i}s"
-            exit 0
-          fi
-          sleep 1
-        done
-        echo "k3s-wait-api-ready: timed out after 120s — continuing anyway"
-        exit 0
-      '')
     ];
+
+    # ── API readiness gate ───────────────────────────────────────────────
+    # Polls /readyz until the API accepts requests, so local-path-provisioner
+    # and other in-cluster pods (and the coder-workspaces namespace creation)
+    # don't race the API before it is up on cold boots. Kept OUT of
+    # k3s.service's ExecStartPost (see note above) so k3s.service can reach
+    # "active" quickly; consumers that genuinely need a ready API order after
+    # THIS unit instead of after k3s.service.
+    systemd.services.k3s-api-ready = {
+      description = "Wait for k3s API server /readyz";
+      wantedBy    = [ "multi-user.target" ];
+      after       = [ "k3s.service" ];
+      requires    = [ "k3s.service" ];
+
+      serviceConfig = {
+        Type            = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "k3s-wait-api-ready" ''
+          echo "k3s-wait-api-ready: waiting for API server /readyz..."
+          for i in $(seq 1 120); do
+            if ${pkgs.curl}/bin/curl -sf -o /dev/null \
+                --cacert /var/lib/rancher/k3s/server/tls/server-ca.crt \
+                https://127.0.0.1:6443/readyz 2>/dev/null; then
+              echo "k3s-wait-api-ready: API ready after ''${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "k3s-wait-api-ready: timed out after 120s — continuing anyway"
+          exit 0
+        '';
+      };
+    };
 
     # ── sysbox-mgr daemon ──────────────────────────────────────────────────
     systemd.services.sysbox-mgr = {
@@ -310,39 +336,28 @@ in
       };
     };
 
-    # ── RuntimeClass auto-deploy manifest ─────────────────────────────────
+    # ── Auto-deploy manifests ─────────────────────────────────────────────
     # k3s auto-deploys YAML files placed in /var/lib/rancher/k3s/server/manifests/
     # The NixOS k3s module accepts an attrset of submodules with a `content` key.
-    services.k3s.manifests."sysbox-runtimeclass".content = {
-      apiVersion = "node.k8s.io/v1";
-      kind       = "RuntimeClass";
-      metadata.name = "sysbox-runc";
-      handler    = "sysbox-runc";
-    };
+    # k3s applies these via its bundled addon controller as soon as the API
+    # server is up — no extra systemd unit, ordering, or kubectl wait needed.
+    services.k3s.manifests = {
+      # sysbox-runc RuntimeClass: workspace pods reference it via runtimeClassName.
+      "sysbox-runtimeclass".content = {
+        apiVersion = "node.k8s.io/v1";
+        kind       = "RuntimeClass";
+        metadata.name = "sysbox-runc";
+        handler    = "sysbox-runc";
+      };
 
-    # ── Pre-create the coder-workspaces namespace ────────────────────────────
-    # Templates deploy workloads into this namespace; they should not own it.
-    systemd.services.coder-k3s-namespace = {
-      description = "Create coder-workspaces namespace in k3s";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "k3s.service" ];
-      requires    = [ "k3s.service" ];
-
-      serviceConfig = {
-        Type            = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "coder-k3s-namespace" ''
-          set -euo pipefail
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          for i in $(seq 1 30); do
-            [ -f "$KUBECONFIG" ] && break
-            sleep 1
-          done
-          ${pkgs.kubectl}/bin/kubectl create namespace coder-workspaces \
-            --dry-run=client -o yaml \
-            | ${pkgs.kubectl}/bin/kubectl apply -f -
-          echo "coder-workspaces namespace ready"
-        '';
+      # coder-workspaces namespace: templates deploy workloads into it and
+      # should not own it. Declared as a manifest (rather than a kubectl
+      # one-shot service) so k3s creates it declaratively right after the API
+      # comes up, with nothing else needing to order against a systemd unit.
+      "coder-workspaces-namespace".content = {
+        apiVersion = "v1";
+        kind       = "Namespace";
+        metadata.name = "coder-workspaces";
       };
     };
 
@@ -350,20 +365,19 @@ in
     environment.variables.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 
     # ── Inject KUBECONFIG into coder.service ─────────────────────────────
-    # Inject KUBECONFIG for Terraform's kubernetes provider, and order after
-    # coder-k3s-namespace so the coder-workspaces namespace exists before
-    # Coder's first workspace build (else it fails: namespace not found).
+    # Inject KUBECONFIG for Terraform's kubernetes provider.
     #
-    # NOTE: use `wants` (soft), NOT `requires` (hard), for the namespace dep.
-    # With `after` + `requires`, a failed coder-k3s-namespace.service (which
-    # runs `set -euo pipefail` and can flake on a cold first boot if the k3s
-    # API isn't accepting requests yet) would prevent coder.service from
-    # starting at all. We only want ordering here; the namespace service is
-    # already `wantedBy = multi-user.target`, so `wants` keeps it pulled in and
-    # ordered before coder without letting a transient flake block the server.
+    # coder.service is intentionally NOT ordered after k3s. The Coder server
+    # only needs Postgres to start and serve; gating it behind k3s (which can
+    # take a while to be ready on a cold boot) delayed the server, its tunnel
+    # URL and web UI for no reason.
+    #
+    # The coder-workspaces namespace is only needed for the *first workspace
+    # build*, not for the server to start. It is now created declaratively by
+    # k3s's addon controller from a manifest (see services.k3s.manifests
+    # above), so there is no systemd unit to order against — by the time a user
+    # provisions a workspace the namespace exists.
     systemd.services.coder = {
-      after = [ "coder-k3s-namespace.service" ];
-      wants = [ "coder-k3s-namespace.service" ];
       environment = {
         KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
       };

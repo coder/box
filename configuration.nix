@@ -824,9 +824,14 @@ EOF
     systemd.services.coder-logstream-kube = {
       description = "Install/upgrade coder-logstream-kube Helm chart";
       wantedBy    = [ "multi-user.target" ];
-      after       = [ "k3s.service" "network-online.target" ];
+      # Order after the k3s API readiness gate (not just k3s.service, which now
+      # reaches "active" before /readyz passes) so helm talks to a live API.
+      # The coder-workspaces namespace is created declaratively by a k3s
+      # manifest; helm passes --create-namespace below so it is robust whether
+      # or not the addon controller has applied that manifest yet.
+      after       = [ "k3s-api-ready.service" "network-online.target" ];
       wants       = [ "network-online.target" ];
-      requires    = [ "k3s.service" ];
+      requires    = [ "k3s-api-ready.service" ];
       serviceConfig = {
         Type            = "oneshot";
         RemainAfterExit = true;
@@ -843,6 +848,7 @@ EOF
           ${pkgs.kubernetes-helm}/bin/helm upgrade --install coder-logstream-kube \
             coder-logstream-kube/coder-logstream-kube \
             --namespace coder-workspaces \
+            --create-namespace \
             --set url=http://10.42.0.1:3000 \
             --set namespaces={coder-workspaces} \
             --atomic --timeout 120s
