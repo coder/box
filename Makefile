@@ -54,6 +54,15 @@ NIX_PERF_FLAGS = --max-jobs $(NIX_MAX_JOBS) --cores $(NIX_CORES) \
   --option http-connections $(NIX_HTTP_CONNECTIONS) \
   --option max-substitution-jobs $(NIX_MAX_SUBST_JOBS)
 
+# Log output flags, applied to every Nix invocation. Empty by default so local
+# runs keep Nix's native interactive progress bar. In a non-interactive log
+# (GitHub Actions) that animated multi-line bar renders as unreadable ANSI
+# redraw noise, so CI sets e.g.
+#   NIX_OUTPUT_FLAGS='--log-format raw --print-build-logs'
+# to stream plain, greppable, one-line-per-event output (and the actual builder
+# logs) instead. Override per-invocation like the perf flags above.
+NIX_OUTPUT_FLAGS ?=
+
 # Build revision injected into images (installer boot menu, /etc/coder-box-rev).
 # We build through a path flakeref (getFlake (toString ./.)), which carries no
 # git metadata, so self.rev/dirtyRev are empty — compute the rev here and pass
@@ -114,7 +123,7 @@ box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(
 
 define box_build
 	@mkdir -p out
-	$(NIX) build $(NIX_PERF_FLAGS) --impure --no-write-lock-file --print-out-paths \
+	$(NIX) build $(NIX_PERF_FLAGS) $(NIX_OUTPUT_FLAGS) --impure --no-write-lock-file --print-out-paths \
 	  --out-link 'out/$(subst /,-,$@)' --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2)'
 endef
@@ -148,7 +157,7 @@ endef
 # built output to anchor, and the .drv itself is a GC root until next gc.
 #   $(1) = host   $(2) = system.build.<attr>   $(3) = extra module fields   $(4) = arch token
 define box_instantiate
-	$(NIX) eval $(NIX_PERF_FLAGS) --impure --no-write-lock-file --raw --expr \
+	$(NIX) eval $(NIX_PERF_FLAGS) $(NIX_OUTPUT_FLAGS) --impure --no-write-lock-file --raw --expr \
 	  '$(call box_cfg,$(1),$(4),$(3)).$(2).drvPath'
 	@echo
 endef
@@ -161,7 +170,7 @@ endef
 # bad references / type errors in seconds without realising anything. --impure
 # matches the box_* helpers (currentSystem + the CODER_BOX_PR_* env reads).
 check:
-	$(NIX) flake check $(NIX_PERF_FLAGS) --impure --no-build --all-systems
+	$(NIX) flake check $(NIX_PERF_FLAGS) $(NIX_OUTPUT_FLAGS) --impure --no-build --all-systems
 
 # installer/iso is listed first so it's the default goal (bare `make`).
 
