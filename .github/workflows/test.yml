@@ -156,6 +156,12 @@ jobs:
       # keep their plain names.
       CODER_BOX_PR_TITLE: ${{ github.event.pull_request.title }}
       CODER_BOX_PR_NUMBER: ${{ github.event.pull_request.number }}
+      # Branch name for the boot-screen label's "<short-sha>@<branch>" stamp. A
+      # PR checkout is a detached HEAD (so the Makefile's `git rev-parse
+      # --abbrev-ref HEAD` would say "HEAD"); github.head_ref is the real source
+      # branch on pull_request events and empty otherwise (the Makefile then
+      # falls back to the local branch name).
+      CODER_BOX_BRANCH: ${{ github.head_ref }}
     strategy:
       fail-fast: false
       matrix:

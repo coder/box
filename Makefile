@@ -86,6 +86,13 @@ NIX_OUTPUT_FLAGS ?=
 # checkout (the module then falls back to self.rev / "unknown").
 GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo -dirty)
 
+# Git branch injected into images alongside the rev, for the boot-screen label's
+# "<short-sha>@<branch>" stamp (coderBox.branch). Prefer an explicit
+# CODER_BOX_BRANCH (CI sets it from github.head_ref, since a PR checkout is a
+# detached HEAD where `rev-parse --abbrev-ref HEAD` would just say "HEAD"); fall
+# back to the local branch name. Empty/"HEAD" is dropped from the label.
+GIT_BRANCH := $(or $(CODER_BOX_BRANCH),$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null))
+
 # Optional PR title + number woven into the image's pretty version name
 # (boot-menu label + ISO file name) via coderBox.prTitle / coderBox.prNumber.
 # Not injected through the Nix expression (an arbitrary title would need
@@ -134,7 +141,7 @@ iso_comp_field = $(if $(ISO_COMPRESSION),isoImage.squashfsCompression = "$(ISO_C
 #   $(1) = host                 (nixosConfigurations.<host>)
 #   $(2) = arch token           (empty = builder's native arch)
 #   $(3) = extra module fields  (nix attrset body, may be empty)
-box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(2),$(call norm_arch,$(2)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; $(3) } ]; }).config.system.build
+box_cfg = let f = builtins.getFlake (toString ./.); in (f.nixosConfigurations.$(1).extendModules { modules = [ { nixpkgs.hostPlatform = "$(if $(2),$(call norm_arch,$(2)),$${builtins.currentSystem})"; coderBox.rev = "$(GIT_REV)"; coderBox.branch = "$(GIT_BRANCH)"; $(3) } ]; }).config.system.build
 
 define box_build
 	@mkdir -p out

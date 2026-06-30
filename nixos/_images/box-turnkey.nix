@@ -34,7 +34,12 @@ let
   # The PR identity is surfaced off-menu instead: recorded at /etc/coder-box-pr
   # and printed by the installer console banner (see prFull / ../installer/iso.nix).
   # Empty for tag/main/local builds.
-  inherit (config.coderBox) prTitle prNumber;
+  inherit (config.coderBox)
+    prTitle
+    prNumber
+    rev
+    branch
+    ;
 
   # Flatten newlines so the identity stays a single line in the file / banner.
   prTitleClean = builtins.replaceStrings [ "\n" ] [ " " ] prTitle;
@@ -43,6 +48,32 @@ let
   # Full PR identity for off-menu surfaces (baked image record + installer
   # console banner): "PR #46: <full title>". Empty for non-PR builds.
   prFull = lib.optionalString (prTitle != "") "PR${prNumMenu}: ${prTitleClean}";
+
+  # Short build revision for the human-facing version stamp (full 40-char hashes
+  # are unwieldy on the boot screen). Keep the "-dirty" suffix if present.
+  revShort =
+    if rev == "unknown" || rev == "" then
+      "unknown"
+    else
+      let
+        dirty = lib.hasSuffix "-dirty" rev;
+        bare = lib.removeSuffix "-dirty" rev;
+      in
+      builtins.substring 0 12 bare + lib.optionalString dirty "-dirty";
+
+  # A detached-HEAD checkout (the default for GitHub Actions' PR builds) reports
+  # branch "HEAD", which is noise — treat it like an unknown branch and drop it.
+  branchClean = if branch == "HEAD" || branch == "unknown" then "" else branch;
+
+  # Version stamp woven into the boot-screen label, using the conventional
+  # "<short-sha>@<branch>" form (branch omitted when unknown/detached).
+  versionStamp = revShort + lib.optionalString (branchClean != "") "@${branchClean}";
+
+  # Boot-screen label (the GRUB footer in ../base/iso.nix). ALWAYS present so the
+  # image's identity is visible on the boot screen regardless of build type:
+  #   with a PR:    "Coder Box - PR #46: <title> (<short-sha>@<branch>)"
+  #   without a PR: "Coder Box - <short-sha>@<branch>"
+  bootLabel = "Coder Box - " + (if prFull != "" then "${prFull} (${versionStamp})" else versionStamp);
 in
 {
   imports = [
@@ -68,6 +99,17 @@ in
     type = lib.types.str;
     default = self.rev or self.dirtyRev or "unknown";
     description = "Git revision this Coder box image was built from.";
+  };
+
+  # Git branch this image was built from, woven into the boot-screen label as
+  # "<short-sha>@<branch>". Like coderBox.rev, the Makefile injects it (path
+  # flakerefs carry no git metadata); CI can also set CODER_BOX_BRANCH for PR
+  # builds where the checkout is a detached HEAD. Empty/"HEAD" is treated as
+  # unknown and dropped from the label.
+  options.coderBox.branch = lib.mkOption {
+    type = lib.types.str;
+    default = builtins.getEnv "CODER_BOX_BRANCH";
+    description = "Git branch this Coder box image was built from (woven into the boot-screen label when known).";
   };
 
   # PR title for a pull-request preview build. CI sets it via the
@@ -102,6 +144,17 @@ in
     readOnly = true;
     default = prFull;
     description = "Full PR identity (number + untruncated title) for off-menu surfaces (empty for non-PR builds).";
+  };
+
+  # Boot-screen label (the GRUB footer in ../base/iso.nix), e.g.
+  # "Coder Box - PR #46: <title> (abc123def456@my-branch)" or, without a PR,
+  # "Coder Box - abc123def456@my-branch". Always non-empty.
+  options.coderBox.bootLabel = lib.mkOption {
+    type = lib.types.str;
+    internal = true;
+    readOnly = true;
+    default = bootLabel;
+    description = "Boot-screen footer label (build identity: PR + short-sha@branch); always present.";
   };
 
   config = {
