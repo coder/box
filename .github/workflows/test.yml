@@ -357,8 +357,11 @@ jobs:
               ? { slug: 'installer', label: 'Installer' }
               : { slug: 'appliance', label: 'Appliance' };
 
-            // 3. Build the table, sorted by kind then arch for a stable layout.
-            rows.sort((a, b) => a.file.localeCompare(b.file) || a.system.localeCompare(b.system));
+            // 3. Build the table, sorted by kind (installer before appliance)
+            // then arch for a stable layout.
+            const kindRank = (file) => (file.includes('-installer-') ? 0 : 1);
+            rows.sort((a, b) =>
+              kindRank(a.file) - kindRank(b.file) || a.system.localeCompare(b.system));
             let body = '## 📀 ISO build artifacts\n\n';
             if (rows.length === 0) {
               body += '_No ISO artifacts were produced in this run._\n';
