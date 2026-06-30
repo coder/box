@@ -30,18 +30,18 @@
   # Use systemd-networkd instead of dhcpcd (already disabled by
   # incus-virtual-machine.nix, but be explicit).
   networking = {
-    dhcpcd.enable        = false;
-    useDHCP              = false;
-    useHostResolvConf    = false;
+    dhcpcd.enable = false;
+    useDHCP = false;
+    useHostResolvConf = false;
   };
 
   systemd.network = {
     enable = true;
     networks."50-enp5s0" = {
-      matchConfig.Name   = "enp5s0";
+      matchConfig.Name = "enp5s0";
       networkConfig = {
-        DHCP           = "ipv4";
-        IPv6AcceptRA   = true;
+        DHCP = "ipv4";
+        IPv6AcceptRA = true;
       };
       linkConfig.RequiredForOnline = "routable";
     };
@@ -49,12 +49,12 @@
 
   # The full desktop stack from configuration.nix is not needed in a VM.
   # Use lib.mkForce to win against the lib.mkDefault values set there.
-  services.xserver.enable                = lib.mkForce false;
-  services.displayManager.sddm.enable    = lib.mkForce false;
+  services.xserver.enable = lib.mkForce false;
+  services.displayManager.sddm.enable = lib.mkForce false;
   services.desktopManager.plasma6.enable = lib.mkForce false;
-  services.pipewire.enable               = lib.mkForce false;
-  services.pulseaudio.enable             = lib.mkForce false;
-  security.rtkit.enable                  = lib.mkForce false;
-  services.printing.enable               = lib.mkForce false;
-  services.avahi.enable                  = lib.mkForce false;
+  services.pipewire.enable = lib.mkForce false;
+  services.pulseaudio.enable = lib.mkForce false;
+  security.rtkit.enable = lib.mkForce false;
+  services.printing.enable = lib.mkForce false;
+  services.avahi.enable = lib.mkForce false;
 }

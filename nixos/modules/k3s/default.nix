@@ -16,7 +16,12 @@
 #
 # Apply: sudo nixos-rebuild switch
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.coder-nixos.k3s;
@@ -24,8 +29,8 @@ in
 {
   options.services.coder-nixos.k3s = {
     enable = lib.mkOption {
-      type        = lib.types.bool;
-      default     = false;
+      type = lib.types.bool;
+      default = false;
       description = ''
         Enable a single-node k3s server on this host.
 
@@ -51,7 +56,7 @@ in
     # sets are additive (none contradict), so a single base config serves both.
     services.k3s = {
       enable = true;
-      role   = "server";
+      role = "server";
 
       extraFlags = lib.concatStringsSep " " [
         # Make kubeconfig readable by coder group after the ownership fix below.
@@ -86,12 +91,12 @@ in
     # so it does not hold k3s.service in "activating" (see k3s-api-ready below).
     systemd.services.coder-k3s-kubeconfig-fix = {
       description = "Fix k3s kubeconfig ownership (root:coder 0640)";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "k3s.service" ];
-      requires    = [ "k3s.service" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "k3s.service" ];
+      requires = [ "k3s.service" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
 
         ExecStart = pkgs.writeShellScript "coder-k3s-kubeconfig-fix" ''
@@ -128,12 +133,12 @@ in
     # order after THIS unit instead.
     systemd.services.k3s-api-ready = {
       description = "Wait for k3s API server /readyz";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "k3s.service" ];
-      requires    = [ "k3s.service" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "k3s.service" ];
+      requires = [ "k3s.service" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = pkgs.writeShellScript "k3s-wait-api-ready" ''
           echo "k3s-wait-api-ready: waiting for API server /readyz..."
@@ -166,7 +171,7 @@ in
     # created declaratively with no systemd unit for anything to order against.
     services.k3s.manifests."coder-workspaces-namespace".content = {
       apiVersion = "v1";
-      kind       = "Namespace";
+      kind = "Namespace";
       metadata.name = "coder-workspaces";
     };
 
@@ -193,10 +198,13 @@ in
     environment.variables.KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 
     # ── Ensure coder group exists ─────────────────────────────────────────────
-    users.groups.coder = lib.mkDefault {};
+    users.groups.coder = lib.mkDefault { };
 
     # ── kubectl + helm in PATH ────────────────────────────────────────────────
-    environment.systemPackages = with pkgs; [ kubectl kubernetes-helm ];
+    environment.systemPackages = with pkgs; [
+      kubectl
+      kubernetes-helm
+    ];
 
     # ── Firewall ──────────────────────────────────────────────────────────────
     networking.firewall.allowedTCPPorts = lib.mkIf config.networking.firewall.enable [ 6443 ];

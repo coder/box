@@ -19,14 +19,19 @@
 #
 # Apply: sudo nixos-rebuild switch
 
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.services.coder-nixos.sysbox;
 
   # See packages/sysbox-runc and packages/sysbox-ce for build details.
-  sysboxRunc  = pkgs.callPackage ../../../packages/sysbox-runc {};
-  sysboxMgrFs = pkgs.callPackage ../../../packages/sysbox-ce {};
+  sysboxRunc = pkgs.callPackage ../../../packages/sysbox-runc { };
+  sysboxMgrFs = pkgs.callPackage ../../../packages/sysbox-ce { };
 
   # ── containerd v3 config template ───────────────────────────────────────────
   #
@@ -61,19 +66,19 @@ let
   # ── sysctl settings required by sysbox ──────────────────────────────────────
   sysboxSysctls = {
     "kernel.unprivileged_userns_clone" = 1;
-    "fs.inotify.max_queued_events"     = 1048576;
-    "fs.inotify.max_user_watches"      = 1048576;
-    "fs.inotify.max_user_instances"    = 1048576;
-    "kernel.keys.maxkeys"              = 20000;
-    "kernel.keys.maxbytes"             = 1400000;
-    "kernel.pid_max"                   = 4194304;
+    "fs.inotify.max_queued_events" = 1048576;
+    "fs.inotify.max_user_watches" = 1048576;
+    "fs.inotify.max_user_instances" = 1048576;
+    "kernel.keys.maxkeys" = 20000;
+    "kernel.keys.maxbytes" = 1400000;
+    "kernel.pid_max" = 4194304;
   };
 in
 {
   options.services.coder-nixos.sysbox = {
     enable = lib.mkOption {
-      type        = lib.types.bool;
-      default     = false;
+      type = lib.types.bool;
+      default = false;
       description = ''
         Enable sysbox-runc as an additional OCI runtime on the k3s base.
         Workspace pods reference it via runtimeClassName: sysbox-runc and get
@@ -93,16 +98,26 @@ in
 
     # ── Kernel parameters sysbox requires ─────────────────────────────────────
     # Per-key assignment so these merge with the base's user.max_user_namespaces.
-    boot.kernel.sysctl  = sysboxSysctls;
-    boot.kernelParams   = [ "user_namespace.enable=1" ];
+    boot.kernel.sysctl = sysboxSysctls;
+    boot.kernelParams = [ "user_namespace.enable=1" ];
 
     # ── subuid/subgid for kubelet user namespace allocation ───────────────────
     # k3s runs as root; kubelet needs a large subuid/subgid range to allocate
     # UID maps for pods using hostUsers: false (user namespaces).
     # 65536 UIDs per pod × up to 110 pods = ~7.2M UIDs needed.
     users.users.root = {
-      subUidRanges = [{ startUid = 231072; count = 7208960; }];
-      subGidRanges = [{ startGid = 231072; count = 7208960; }];
+      subUidRanges = [
+        {
+          startUid = 231072;
+          count = 7208960;
+        }
+      ];
+      subGidRanges = [
+        {
+          startGid = 231072;
+          count = 7208960;
+        }
+      ];
     };
 
     # containerdConfigTemplate = null means the NixOS k3s module will NOT write
@@ -119,12 +134,12 @@ in
     # containerd config dir and remove the stale config.toml.tmpl if present.
     systemd.services.k3s-containerd-config = {
       description = "Deploy sysbox containerd v3 config template for k3s";
-      wantedBy    = [ "k3s.service" ];
-      before      = [ "k3s.service" ];
-      after       = [ "sysbox.service" ];
+      wantedBy = [ "k3s.service" ];
+      before = [ "k3s.service" ];
+      after = [ "sysbox.service" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = pkgs.writeShellScript "k3s-containerd-config" ''
           set -euo pipefail
@@ -146,62 +161,68 @@ in
     # ── sysbox-mgr daemon ──────────────────────────────────────────────────────
     systemd.services.sysbox-mgr = {
       description = "sysbox-mgr (part of the Sysbox container runtime)";
-      wantedBy    = [ "multi-user.target" ];
-      before      = [ "k3s.service" ];
-      after       = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+      before = [ "k3s.service" ];
+      after = [ "network.target" ];
 
-      startLimitIntervalSec = 0;  # unlimited restarts
+      startLimitIntervalSec = 0; # unlimited restarts
       serviceConfig = {
-        Type               = "notify";
-        ExecStart          = "${sysboxMgrFs}/bin/sysbox-mgr";
+        Type = "notify";
+        ExecStart = "${sysboxMgrFs}/bin/sysbox-mgr";
         # sysbox calls iptables at runtime for netfilter setup
-        ExecStartPre       = "+${pkgs.coreutils}/bin/mkdir -p /var/lib/sysbox /run/sysbox";
-        Environment        = "PATH=${pkgs.iptables}/bin:${pkgs.kmod}/bin:/run/wrappers/bin:/run/current-system/sw/bin";
-        TimeoutStartSec    = 45;
-        TimeoutStopSec     = 90;
-        NotifyAccess       = "main";
-        OOMScoreAdjust     = -500;
-        LimitNOFILE        = "infinity";
-        LimitNPROC         = "infinity";
-        Restart            = "on-failure";
-        RestartSec         = "5s";
+        ExecStartPre = "+${pkgs.coreutils}/bin/mkdir -p /var/lib/sysbox /run/sysbox";
+        Environment = "PATH=${pkgs.iptables}/bin:${pkgs.kmod}/bin:/run/wrappers/bin:/run/current-system/sw/bin";
+        TimeoutStartSec = 45;
+        TimeoutStopSec = 90;
+        NotifyAccess = "main";
+        OOMScoreAdjust = -500;
+        LimitNOFILE = "infinity";
+        LimitNPROC = "infinity";
+        Restart = "on-failure";
+        RestartSec = "5s";
       };
     };
 
     # ── sysbox-fs daemon ────────────────────────────────────────────────────────
     systemd.services.sysbox-fs = {
       description = "sysbox-fs (part of the Sysbox container runtime)";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "sysbox-mgr.service" ];
-      before      = [ "k3s.service" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "sysbox-mgr.service" ];
+      before = [ "k3s.service" ];
 
-      startLimitIntervalSec = 0;  # unlimited restarts
+      startLimitIntervalSec = 0; # unlimited restarts
       serviceConfig = {
-        Type               = "notify";
-        ExecStart          = "${sysboxMgrFs}/bin/sysbox-fs";
+        Type = "notify";
+        ExecStart = "${sysboxMgrFs}/bin/sysbox-fs";
         # sysbox-fs uses FUSE for /proc and /sys mounts; needs fusermount in PATH
-        Environment        = "PATH=${pkgs.fuse}/bin:${pkgs.fuse3}/bin:/run/wrappers/bin:/run/current-system/sw/bin";
-        TimeoutStartSec    = 45;
-        TimeoutStopSec     = 45;
-        NotifyAccess       = "main";
-        OOMScoreAdjust     = -500;
-        LimitNOFILE        = "infinity";
-        LimitNPROC         = "infinity";
-        Restart            = "on-failure";
-        RestartSec         = "5s";
+        Environment = "PATH=${pkgs.fuse}/bin:${pkgs.fuse3}/bin:/run/wrappers/bin:/run/current-system/sw/bin";
+        TimeoutStartSec = 45;
+        TimeoutStopSec = 45;
+        NotifyAccess = "main";
+        OOMScoreAdjust = -500;
+        LimitNOFILE = "infinity";
+        LimitNPROC = "infinity";
+        Restart = "on-failure";
+        RestartSec = "5s";
       };
     };
 
     # ── sysbox umbrella target ──────────────────────────────────────────────────
     systemd.services.sysbox = {
       description = "Sysbox container runtime";
-      wantedBy    = [ "multi-user.target" ];
-      bindsTo     = [ "sysbox-mgr.service" "sysbox-fs.service" ];
-      after       = [ "sysbox-mgr.service" "sysbox-fs.service" ];
-      before      = [ "k3s.service" ];
+      wantedBy = [ "multi-user.target" ];
+      bindsTo = [
+        "sysbox-mgr.service"
+        "sysbox-fs.service"
+      ];
+      after = [
+        "sysbox-mgr.service"
+        "sysbox-fs.service"
+      ];
+      before = [ "k3s.service" ];
 
       serviceConfig = {
-        Type      = "exec";
+        Type = "exec";
         ExecStart = pkgs.writeShellScript "sysbox-check" ''
           ${sysboxRunc}/bin/sysbox-runc --version
           ${sysboxMgrFs}/bin/sysbox-mgr  --version
@@ -216,9 +237,9 @@ in
     # The NixOS k3s module accepts an attrset of submodules with a `content` key.
     services.k3s.manifests."sysbox-runtimeclass".content = {
       apiVersion = "node.k8s.io/v1";
-      kind       = "RuntimeClass";
+      kind = "RuntimeClass";
       metadata.name = "sysbox-runc";
-      handler    = "sysbox-runc";
+      handler = "sysbox-runc";
     };
 
     # ── FUSE: allow non-root mounts (needed by sysbox-fs) ─────────────────────
@@ -227,6 +248,10 @@ in
     # ── Additional packages ───────────────────────────────────────────────────
     # rsync is required by the sysbox-mgr preflight check; without it,
     # sysbox-mgr exits immediately and pods stay stuck in ContainerCreating.
-    environment.systemPackages = with pkgs; [ fuse fuse3 rsync ];
+    environment.systemPackages = with pkgs; [
+      fuse
+      fuse3
+      rsync
+    ];
   };
 }

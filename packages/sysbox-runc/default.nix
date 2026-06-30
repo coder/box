@@ -30,16 +30,24 @@
 #   3. Update `version` and `src.rev` / `src.hash` below.
 #   4. Run: sudo nixos-rebuild switch
 
-{ lib, stdenv, fetchFromGitHub, go, pkg-config, libseccomp, autoPatchelfHook }:
+{
+  lib,
+  stdenv,
+  fetchFromGitHub,
+  go,
+  pkg-config,
+  libseccomp,
+  autoPatchelfHook,
+}:
 
 let
   version = "0.7.0";
 
   src = fetchFromGitHub {
-    owner           = "nestybox";
-    repo            = "sysbox";
-    rev             = "v${version}";
-    hash            = "sha256-zcN42LSBxBROPi49gdW+PPuIfnMHVmNhYzuBhs3Nc5U=";
+    owner = "nestybox";
+    repo = "sysbox";
+    rev = "v${version}";
+    hash = "sha256-zcN42LSBxBROPi49gdW+PPuIfnMHVmNhYzuBhs3Nc5U=";
     fetchSubmodules = true;
   };
 
@@ -53,11 +61,15 @@ let
 in
 
 stdenv.mkDerivation {
-  pname   = "sysbox-runc";
+  pname = "sysbox-runc";
   inherit version src;
 
-  nativeBuildInputs = [ go pkg-config autoPatchelfHook ];
-  buildInputs       = [ libseccomp ];
+  nativeBuildInputs = [
+    go
+    pkg-config
+    autoPatchelfHook
+  ];
+  buildInputs = [ libseccomp ];
 
   buildPhase = ''
     runHook preBuild
@@ -89,8 +101,11 @@ stdenv.mkDerivation {
 
   meta = {
     description = "sysbox-runc ${version} — OCI runtime fork with features subcommand for containerd 2.x / user namespace support";
-    homepage    = "https://github.com/nestybox/sysbox";
-    license     = lib.licenses.asl20;
-    platforms   = [ "x86_64-linux" "aarch64-linux" ];
+    homepage = "https://github.com/nestybox/sysbox";
+    license = lib.licenses.asl20;
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
   };
 }

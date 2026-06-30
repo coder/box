@@ -13,12 +13,14 @@
 #
 # Call ../coder-from-source directly to override buildGoModule / Go toolchain.
 
-{ callPackage
-, channel       ? "stable"
-, fromSource    ? false
-, agplLicensed  ? false
+{
+  callPackage,
+  channel ? "stable",
+  fromSource ? false,
+  agplLicensed ? false,
 }:
 
-if fromSource || agplLicensed
-then callPackage ../coder-from-source { inherit channel agplLicensed; }
-else callPackage ../coder-binary      { inherit channel; }
+if fromSource || agplLicensed then
+  callPackage ../coder-from-source { inherit channel agplLicensed; }
+else
+  callPackage ../coder-binary { inherit channel; }

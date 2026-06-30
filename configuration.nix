@@ -12,13 +12,18 @@
 #
 # Per-host local.nix lives at hosts/<host>/local.nix and is gitignored.
 
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 let
-  coder          = pkgs.callPackage ./packages/coder {
+  coder = pkgs.callPackage ./packages/coder {
     channel = "mainline";
   };
-  coderdProvider = pkgs.callPackage ./packages/coderd-provider {};
+  coderdProvider = pkgs.callPackage ./packages/coderd-provider { };
 
   # UID 991 is pinned so the DOCKER_HOST socket path is deterministic.
   # NixOS won't change an existing user's UID live, so this must stay 991.
@@ -44,24 +49,24 @@ in
   # ./hosts/<host>/ and are auto-discovered by flake.nix from the directory
   # listing. This shared config covers what every box has in common.
   imports = [
-    ./nixos/modules/k3s           # base single-node k3s server
-    ./nixos/modules/podman        # optional: rootless Podman socket runtime (enable one of podman/sysbox)
-    ./nixos/modules/sysbox        # optional: sysbox-runc runtime (isolated Docker per workspace)
-    ./nixos/modules/tailscale     # optional Tailscale (enable in hosts/<host>/local.nix)
+    ./nixos/modules/k3s # base single-node k3s server
+    ./nixos/modules/podman # optional: rootless Podman socket runtime (enable one of podman/sysbox)
+    ./nixos/modules/sysbox # optional: sysbox-runc runtime (isolated Docker per workspace)
+    ./nixos/modules/tailscale # optional Tailscale (enable in hosts/<host>/local.nix)
     ./nixos/modules/screenconnect # optional ScreenConnect client (enable in hosts/<host>/local.nix)
   ];
 
   # ── NixOS option: SSH key sync ─────────────────────────────────────────────
   # Set in hosts/<host>/local.nix: services.coder-sync-ssh-keys.githubUsers = [ "user1" ];
   options.services.coder-nixos.lanIp = lib.mkOption {
-    type        = lib.types.str;
-    default     = "";
+    type = lib.types.str;
+    default = "";
     description = "LAN IP of this box, used for CODER_AGENT_URL and k8s hostAliases so pods resolve the hostname without relying on mDNS. Set in the host's local.nix. Leave empty to fall back to hostname-based mDNS URL.";
   };
 
   options.services.coder-sync-ssh-keys.githubUsers = lib.mkOption {
-    type        = lib.types.listOf lib.types.str;
-    default     = [];
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
     description = "GitHub usernames whose SSH keys are fetched and written to /etc/ssh/authorized_keys.d/ on each boot.";
   };
 
@@ -90,8 +95,8 @@ in
     # overlay so every pkgs.terraform consumer (coder's PATH wrapper,
     # systemPackages, the template-deploy scripts) picks it up. Works on arm64 too.
     nixpkgs.overlays = [
-      (final: prev: {
-        terraform = final.callPackage ./packages/terraform-binary {};
+      (final: _prev: {
+        terraform = final.callPackage ./packages/terraform-binary { };
       })
     ];
 
@@ -117,14 +122,14 @@ in
     # per host, and since every install host gets a unique networking.hostName
     # (flake.nix injects the folder name) each box ends up with a distinct id —
     # no shell-side generation needed. mkDefault so a host can still override.
-    networking.hostId =
-      lib.mkDefault (builtins.substring 0 8
-        (builtins.hashString "sha256" config.networking.hostName));
+    networking.hostId = lib.mkDefault (
+      builtins.substring 0 8 (builtins.hashString "sha256" config.networking.hostName)
+    );
 
     # Keep the pool healthy and SSDs happy: periodic scrub (verifies every
     # block against its checksum and self-heals where possible) and weekly TRIM.
     services.zfs.autoScrub.enable = lib.mkDefault true;
-    services.zfs.trim.enable      = lib.mkDefault true;
+    services.zfs.trim.enable = lib.mkDefault true;
 
     # ── Swap ──────────────────────────────────────────────────────────────────
     # No on-disk swap partition (see nixos/disko-standard.nix). Use a
@@ -144,11 +149,11 @@ in
     # Scope is deliberately narrow: only the "drop off the network" sleep
     # states are blocked. Idle/lid/power-key handling is left at NixOS
     # defaults — the single concern is the box not putting itself to sleep.
-    systemd.targets.suspend.enable      = false;
-    systemd.targets.hibernate.enable    = false;
+    systemd.targets.suspend.enable = false;
+    systemd.targets.hibernate.enable = false;
     systemd.targets.hybrid-sleep.enable = false;
     services.logind.settings.Login = {
-      HandleSuspendKey   = "ignore";
+      HandleSuspendKey = "ignore";
       HandleHibernateKey = "ignore";
     };
 
@@ -170,24 +175,28 @@ in
 
     # mDNS: every box reachable as <hostname>.local on the LAN
     services.avahi = {
-      enable   = true;
+      enable = true;
       nssmdns4 = true;
-      publish  = { enable = true; addresses = true; workstation = true; };
+      publish = {
+        enable = true;
+        addresses = true;
+        workstation = true;
+      };
     };
 
     # ── Locale / time ─────────────────────────────────────────────────────────
     time.timeZone = "America/Chicago";
     i18n.defaultLocale = "en_US.UTF-8";
     i18n.extraLocaleSettings = {
-      LC_ADDRESS        = "en_US.UTF-8";
+      LC_ADDRESS = "en_US.UTF-8";
       LC_IDENTIFICATION = "en_US.UTF-8";
-      LC_MEASUREMENT    = "en_US.UTF-8";
-      LC_MONETARY       = "en_US.UTF-8";
-      LC_NAME           = "en_US.UTF-8";
-      LC_NUMERIC        = "en_US.UTF-8";
-      LC_PAPER          = "en_US.UTF-8";
-      LC_TELEPHONE      = "en_US.UTF-8";
-      LC_TIME           = "en_US.UTF-8";
+      LC_MEASUREMENT = "en_US.UTF-8";
+      LC_MONETARY = "en_US.UTF-8";
+      LC_NAME = "en_US.UTF-8";
+      LC_NUMERIC = "en_US.UTF-8";
+      LC_PAPER = "en_US.UTF-8";
+      LC_TELEPHONE = "en_US.UTF-8";
+      LC_TIME = "en_US.UTF-8";
     };
 
     # ── Desktop: KDE Plasma 6 ─────────────────────────────────────────────────
@@ -196,16 +205,19 @@ in
     services.displayManager.sddm.wayland.enable = false;
     services.displayManager.defaultSession = "plasmax11";
     services.desktopManager.plasma6.enable = true;
-    services.xserver.xkb = { layout = "us"; variant = ""; };
+    services.xserver.xkb = {
+      layout = "us";
+      variant = "";
+    };
 
     # ── Audio ─────────────────────────────────────────────────────────────────
     services.pulseaudio.enable = false;
     security.rtkit.enable = true;
     services.pipewire = {
-      enable            = true;
-      alsa.enable       = true;
+      enable = true;
+      alsa.enable = true;
       alsa.support32Bit = true;
-      pulse.enable      = true;
+      pulse.enable = true;
     };
 
     services.printing.enable = true;
@@ -233,14 +245,14 @@ in
     # Writes keys to /etc/ssh/authorized_keys.d/<user>. Runs at boot.
     systemd.services.coder-sync-ssh-keys = {
       description = "Sync SSH authorized keys from GitHub user profiles";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "network-online.target" ];
-      wants       = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart       = pkgs.writeShellScript "coder-sync-ssh-keys" ''
+        ExecStart = pkgs.writeShellScript "coder-sync-ssh-keys" ''
           set -euo pipefail
           KEYS_DIR="/etc/ssh/authorized_keys.d"
 
@@ -277,19 +289,38 @@ in
     nixpkgs.config.allowUnfree = true;
 
     environment.systemPackages = with pkgs; [
-      git vim curl wget htop jq pciutils usbutils coder terraform gh vlc
+      git
+      vim
+      curl
+      wget
+      htop
+      jq
+      pciutils
+      usbutils
+      coder
+      terraform
+      gh
+      vlc
     ];
 
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
-    nix.settings.download-buffer-size = 268435456;  # 256 MiB; quiets the "buffer full" warning on big closure pulls
+    nix.settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+    nix.settings.download-buffer-size = 268435456; # 256 MiB; quiets the "buffer full" warning on big closure pulls
     networking.firewall.enable = false;
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     services.postgresql = {
-      enable  = true;
+      enable = true;
       package = pkgs.postgresql;
       ensureDatabases = [ "coder" ];
-      ensureUsers = [{ name = "coder"; ensureDBOwnership = true; }];
+      ensureUsers = [
+        {
+          name = "coder";
+          ensureDBOwnership = true;
+        }
+      ];
       authentication = pkgs.lib.mkOverride 10 ''
         local all postgres              peer
         local all all                   peer
@@ -304,8 +335,8 @@ in
     # workspace tooling that hard-codes `docker` (the coder-cli template, host
     # debugging, ad hoc commands) still works without a real Docker daemon.
     virtualisation.podman = {
-      enable        = true;
-      dockerCompat  = true;
+      enable = true;
+      dockerCompat = true;
       extraPackages = [ pkgs.crun ]; # workaround nixpkgs#226849
     };
     boot.kernel.sysctl."user.max_user_namespaces" = 65536;
@@ -321,20 +352,30 @@ in
     # linger = true ensures the user session (and Podman socket) starts at boot.
     users.users.coder = {
       isSystemUser = true;
-      uid          = coderUid;
-      group        = "coder";
-      home         = "/var/lib/coder";
-      createHome   = true;
-      homeMode     = "700";
-      shell        = pkgs.bash;  # needed for systemd user session
-      linger       = true;
-      subUidRanges = [{ startUid = 100000; count = 65536; }];
-      subGidRanges = [{ startGid = 100000; count = 65536; }];
+      uid = coderUid;
+      group = "coder";
+      home = "/var/lib/coder";
+      createHome = true;
+      homeMode = "700";
+      shell = pkgs.bash; # needed for systemd user session
+      linger = true;
+      subUidRanges = [
+        {
+          startUid = 100000;
+          count = 65536;
+        }
+      ];
+      subGidRanges = [
+        {
+          startGid = 100000;
+          count = 65536;
+        }
+      ];
     };
-    users.groups.coder = {};
+    users.groups.coder = { };
     # podman.socket uses SocketGroup=podman; the NixOS podman module does not
     # create this group automatically so we declare it explicitly.
-    users.groups.podman = {};
+    users.groups.podman = { };
 
     # /etc/coder dir + empty session-token file (populated on first boot by
     # coder-init-admin.service, which runs as the coder user and needs to
@@ -350,9 +391,9 @@ in
     # lands in $HOME (or a human on first login) finds it immediately. The repo
     # itself lives at /etc/nixos-repo; agents.md documents the rebuild workflow.
     # `L+` recreates the symlink on every boot so it tracks the canonical file.
-    ++ (lib.mapAttrsToList
-         (_: u: "L+ ${u.home}/agents.md - - - - /etc/nixos-repo/agents.md")
-         (lib.filterAttrs (_: u: u.isNormalUser && u.home != null) config.users.users));
+    ++ (lib.mapAttrsToList (_: u: "L+ ${u.home}/agents.md - - - - /etc/nixos-repo/agents.md") (
+      lib.filterAttrs (_: u: u.isNormalUser && u.home != null) config.users.users
+    ));
 
     # Whitelist the root-owned baked repo so interactive `git`/`nix` as the
     # login user (or via sudo) don't trip git's dubious-ownership guard with
@@ -368,40 +409,46 @@ in
     # via systemd.services.coder.environment in hosts/<host>/local.nix; no EnvironmentFile.
     systemd.services.coder = {
       description = "Coder Server";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "network.target" "postgresql.service" "user@${toString coderUid}.service" ];
-      requires    = [ "postgresql.service" ];
-      wants       = [ "user@${toString coderUid}.service" ]; # non-fatal if user session is delayed
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "network.target"
+        "postgresql.service"
+        "user@${toString coderUid}.service"
+      ];
+      requires = [ "postgresql.service" ];
+      wants = [ "user@${toString coderUid}.service" ]; # non-fatal if user session is delayed
 
       environment = {
-        CODER_HTTP_ADDRESS             = "0.0.0.0:3000";
-        CODER_MAX_TOKEN_LIFETIME       = "8760h"; # allow year-long tokens (e.g. nixos-sync)
+        CODER_HTTP_ADDRESS = "0.0.0.0:3000";
+        CODER_MAX_TOKEN_LIFETIME = "8760h"; # allow year-long tokens (e.g. nixos-sync)
         CODER_MAX_ADMIN_TOKEN_LIFETIME = "8760h";
         # CODER_ACCESS_URL not set → Coder auto-creates a *.try.coder.app tunnel URL
         # Wildcard access URL is set automatically by the tunnel (not needed here)
 
         # Agents (k3s pods) reach the server directly over LAN for low latency.
         # This is independent of the public tunnel URL used by browsers.
-        CODER_AGENT_URL = let lanIp = config.services.coder-nixos.lanIp; in
-          if lanIp != "" then "http://${lanIp}:3000"
-          else "http://${config.networking.hostName}.local:3000";
-        CODER_PG_CONNECTION_URL        = "postgres:///coder?host=/run/postgresql&user=coder&sslmode=disable";
-        CODER_DATA_DIR                 = "/var/lib/coder";
+        CODER_AGENT_URL =
+          let
+            inherit (config.services.coder-nixos) lanIp;
+          in
+          if lanIp != "" then "http://${lanIp}:3000" else "http://${config.networking.hostName}.local:3000";
+        CODER_PG_CONNECTION_URL = "postgres:///coder?host=/run/postgresql&user=coder&sslmode=disable";
+        CODER_DATA_DIR = "/var/lib/coder";
         # Point the Terraform Docker provider at the rootless Podman socket.
-        DOCKER_HOST                    = "unix:///run/user/${toString coderUid}/podman/podman.sock";
+        DOCKER_HOST = "unix:///run/user/${toString coderUid}/podman/podman.sock";
         # Enable all experiments: Coder AI agents, MCP, etc.
-        CODER_EXPERIMENTS              = "*";
+        CODER_EXPERIMENTS = "*";
         # Hide the AI Tasks UI from the dashboard. Experiments above enable the
         # underlying features (agents, MCP); this just keeps the Tasks tab off.
-        CODER_HIDE_AI_TASKS            = "true";
+        CODER_HIDE_AI_TASKS = "true";
       };
 
       serviceConfig = {
-        ExecStart    = "${coder}/bin/coder server";
-        User         = "coder";
-        Group        = "coder";
-        Restart      = "on-failure";
-        RestartSec   = "5s";
+        ExecStart = "${coder}/bin/coder server";
+        User = "coder";
+        Group = "coder";
+        Restart = "on-failure";
+        RestartSec = "5s";
         ExecStartPre = "+${pkgs.coreutils}/bin/chown -R coder:coder /var/lib/coder";
       };
     };
@@ -412,23 +459,23 @@ in
     # If CODER_ADMIN_EMAIL is unset, skips and directs user to the browser wizard.
     systemd.services.coder-init-admin = {
       description = "Coder bootstrap: create admin, mint session token, deploy templates";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "coder.service" ];
-      requires    = [ "coder.service" ];
+      wantedBy = [ "multi-user.target" ];
+      after = [ "coder.service" ];
+      requires = [ "coder.service" ];
 
       # Inherit the full coder.service environment so CODER_ADMIN_* and
       # CODER_PG_CONNECTION_URL are available without duplication.
-      environment = config.systemd.services.coder.environment;
+      inherit (config.systemd.services.coder) environment;
 
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
         # Runs as the coder user so peer auth against the local PG socket
         # matches the 'coder' role in CODER_PG_CONNECTION_URL. The token
         # file is owned by coder:coder (see tmpfiles.rules above), so this
         # service can still write it.
-        User            = "coder";
-        ExecStart       = pkgs.writeShellScript "coder-init-admin" ''
+        User = "coder";
+        ExecStart = pkgs.writeShellScript "coder-init-admin" ''
           set -euo pipefail
 
           admin_sentinel=/var/lib/coder/.admin-created
@@ -540,7 +587,6 @@ in
       };
     };
 
-
     # ── Coder reset (on-demand) ───────────────────────────────────────────────
     # Tears down all workspace pods/PVCs, wipes the Coder DB and data dir,
     # re-bootstraps the admin user, mints a fresh session token, and runs
@@ -550,10 +596,14 @@ in
     systemd.services.coder-reset = {
       description = "Coder – full wipe and re-bootstrap (run manually)";
       # NOT in wantedBy — must be triggered explicitly with `systemctl start coder-reset`
-      after       = [ "coder.service" "k3s.service" "postgresql.service" ];
-      requires    = [ "postgresql.service" ];
+      after = [
+        "coder.service"
+        "k3s.service"
+        "postgresql.service"
+      ];
+      requires = [ "postgresql.service" ];
 
-      environment = config.systemd.services.coder.environment;
+      inherit (config.systemd.services.coder) environment;
 
       serviceConfig = {
         Type = "oneshot";
@@ -664,13 +714,11 @@ in
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /'
         fi
       '';
-      deps = [];
+      deps = [ ];
     };
-
 
     # The nook-android image build service is host-specific and lives in
     # ./hosts/coder-thinkcentre/default.nix.
-
 
     # ── Coder tunnel redirect ─────────────────────────────────────────────────
     # Listens on port 80 (http://coder-thinkcentre.local) and issues a 302
@@ -692,66 +740,66 @@ in
           print(f"coder-redirect: serving redirects to {TUNNEL} on :80", flush=True)
           http.server.HTTPServer(("", 80), R).serve_forever()
         '';
-      in {
-      description = "HTTP redirect: port 80 → Coder tunnel URL";
-      wantedBy    = [ "multi-user.target" ];
-      after       = [ "coder.service" ];
-      requires    = [ "coder.service" ];
+      in
+      {
+        description = "HTTP redirect: port 80 → Coder tunnel URL";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "coder.service" ];
+        requires = [ "coder.service" ];
 
-      serviceConfig = {
-        Type       = "simple";
-        Restart    = "on-failure";
-        RestartSec = "10s";
-        ExecStart  = pkgs.writeShellScript "coder-redirect" ''
-          set -euo pipefail
-          CODER_LOCAL="http://localhost:3000"
+        serviceConfig = {
+          Type = "simple";
+          Restart = "on-failure";
+          RestartSec = "10s";
+          ExecStart = pkgs.writeShellScript "coder-redirect" ''
+                      set -euo pipefail
+                      CODER_LOCAL="http://localhost:3000"
 
-          # Wait until the Coder API is up
-          echo "coder-redirect: waiting for Coder API..."
-          until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
-            sleep 5
-          done
+                      # Wait until the Coder API is up
+                      echo "coder-redirect: waiting for Coder API..."
+                      until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
+                        sleep 5
+                      done
 
-          # Fetch the tunnel URL (may take a moment to establish after startup)
-          TUNNEL_URL=""
-          for i in $(seq 1 20); do
-            TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
-                -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
-                "$CODER_LOCAL/api/v2/deployment/config" \
-              | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
-            if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-              echo "coder-redirect: tunnel URL is $TUNNEL_URL"
-              break
-            fi
-            echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
-            sleep 5
-          done
+                      # Fetch the tunnel URL (may take a moment to establish after startup)
+                      TUNNEL_URL=""
+                      for i in $(seq 1 20); do
+                        TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
+                            -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
+                            "$CODER_LOCAL/api/v2/deployment/config" \
+                          | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
+                        if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+                          echo "coder-redirect: tunnel URL is $TUNNEL_URL"
+                          break
+                        fi
+                        echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
+                        sleep 5
+                      done
 
-          if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-            echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
-            sleep 30
-            exit 1
-          fi
+                      if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+                        echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
+                        sleep 30
+                        exit 1
+                      fi
 
-          export CODER_TUNNEL_URL="$TUNNEL_URL"
+                      export CODER_TUNNEL_URL="$TUNNEL_URL"
 
-          # Surface the tunnel URL on every console / SSH login.
-          HOSTNAME="$(${pkgs.nettools}/bin/hostname)"
-          ${pkgs.coreutils}/bin/cat > /etc/motd <<EOF
+                      # Surface the tunnel URL on every console / SSH login.
+                      HOSTNAME="$(${pkgs.nettools}/bin/hostname)"
+                      ${pkgs.coreutils}/bin/cat > /etc/motd <<EOF
 
-  Coder is running on this box.
+              Coder is running on this box.
 
-    Tunnel URL:  $TUNNEL_URL
-    Local:       http://$HOSTNAME.local:3000
-    Redirect:    http://$HOSTNAME.local        (302 → tunnel)
+                Tunnel URL:  $TUNNEL_URL
+                Local:       http://$HOSTNAME.local:3000
+                Redirect:    http://$HOSTNAME.local        (302 → tunnel)
 
-EOF
+            EOF
 
-          exec ${pkgs.python3}/bin/python3 ${redirectPy}
-        '';
+                      exec ${pkgs.python3}/bin/python3 ${redirectPy}
+          '';
+        };
       };
-    };
-
 
     # ── Workspace reaper ──────────────────────────────────────────────────────────
     # Deletes workspaces that have been stopped for >= 72 h.
@@ -760,11 +808,11 @@ EOF
     # last_used_at is older than 72 h, and issues DELETE requests.
     systemd.services.coder-workspace-reaper = {
       description = "Delete Coder workspaces stopped for >= 72 h";
-      after       = [ "coder.service" ];
+      after = [ "coder.service" ];
       serviceConfig = {
-        Type            = "oneshot";
-        User            = "root";
-        ExecStart       = pkgs.writeShellScript "coder-workspace-reaper" ''
+        Type = "oneshot";
+        User = "root";
+        ExecStart = pkgs.writeShellScript "coder-workspace-reaper" ''
           set -euo pipefail
           CODER_LOCAL="http://localhost:3000"
           TOKEN_FILE="/etc/coder/session-token"
@@ -811,14 +859,13 @@ EOF
 
     systemd.timers.coder-workspace-reaper = {
       description = "Hourly trigger for coder-workspace-reaper";
-      wantedBy    = [ "timers.target" ];
+      wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnBootSec   = "10min";
+        OnBootSec = "10min";
         OnUnitActiveSec = "1h";
-        Unit        = "coder-workspace-reaper.service";
+        Unit = "coder-workspace-reaper.service";
       };
     };
-
 
     # ── coder-logstream-kube Helm install ─────────────────────────────────────
     # Streams k3s pod events (scheduling, image pull, OOMKill, etc.) into
@@ -826,20 +873,23 @@ EOF
     # so the chart is kept up to date after NixOS rebuilds.
     systemd.services.coder-logstream-kube = {
       description = "Install/upgrade coder-logstream-kube Helm chart";
-      wantedBy    = [ "multi-user.target" ];
+      wantedBy = [ "multi-user.target" ];
       # Order after the k3s API readiness gate (not just k3s.service, which now
       # reaches "active" before /readyz passes) so helm talks to a live API.
       # The coder-workspaces namespace is created declaratively by a k3s
       # manifest; helm passes --create-namespace below so it is robust whether
       # or not the addon controller has applied that manifest yet.
-      after       = [ "k3s-api-ready.service" "network-online.target" ];
-      wants       = [ "network-online.target" ];
-      requires    = [ "k3s-api-ready.service" ];
+      after = [
+        "k3s-api-ready.service"
+        "network-online.target"
+      ];
+      wants = [ "network-online.target" ];
+      requires = [ "k3s-api-ready.service" ];
       serviceConfig = {
-        Type            = "oneshot";
+        Type = "oneshot";
         RemainAfterExit = true;
-        User            = "root";
-        ExecStart       = pkgs.writeShellScript "coder-logstream-kube-install" ''
+        User = "root";
+        ExecStart = pkgs.writeShellScript "coder-logstream-kube-install" ''
           set -euo pipefail
           export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 

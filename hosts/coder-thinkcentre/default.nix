@@ -12,16 +12,17 @@
 # with the existing fileSystems entries. Fresh installs of new hosts use
 # disko-standard.nix and skip hardware-configuration.nix entirely.
 
-{ config, pkgs, lib, inputs, ... }:
+{ pkgs, lib, ... }:
 
 {
-  imports = [ ./hardware-configuration.nix ]
-    ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
+  imports = [
+    ./hardware-configuration.nix
+  ]
+  ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # Activate nixos-facter only when facter.json has been generated for this
   # host. Until then, hardware-configuration.nix alone handles detection.
-  hardware.facter.reportPath =
-    lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
+  hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
 
   # qemu-i386 binfmt: required for 32-bit ADT tools in the nook-android
   # workspace template (32-bit Android build tools run transparently in pods).
@@ -34,12 +35,15 @@
   # Re-runs if the Dockerfile changes (stamp file tracks the content hash).
   systemd.services.nook-android-image-build = {
     description = "Build nook-android container image for Coder workspaces";
-    wantedBy    = [ "multi-user.target" ];
-    after       = [ "network-online.target" "k3s.service" ];
-    wants       = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "network-online.target"
+      "k3s.service"
+    ];
+    wants = [ "network-online.target" ];
     # Don't block boot if the build fails; workspaces just can't start until fixed.
     serviceConfig = {
-      Type            = "oneshot";
+      Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = pkgs.writeShellScript "nook-android-image-build" ''
         set -euo pipefail

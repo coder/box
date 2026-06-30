@@ -20,16 +20,16 @@
 # admin bootstrap) lives in ../box-turnkey.nix. This module only sets the
 # appliance's image identity.
 
-{ config, lib, pkgs, ... }:
+{ lib, pkgs, ... }:
 
 {
   imports = [
-    ../base/iso.nix     # shared ISO mechanics
-    ../box-turnkey.nix   # shared turn-key Coder box (login + Coder bootstrap)
+    ../base/iso.nix # shared ISO mechanics
+    ../box-turnkey.nix # shared turn-key Coder box (login + Coder bootstrap)
   ];
 
   # ── Image identity ───────────────────────────────────────────────────────────
-  isoImage.volumeID         = "CODER_BOX_APPLIANCE";
+  isoImage.volumeID = "CODER_BOX_APPLIANCE";
   # Boot-menu label (both the BIOS/isolinux and EFI/grub entries). The label is
   # "<distroName> <version><appendToMenuLabel>"; the default append is
   # " Installer", which is misleading here since this is the appliance, not the
@@ -40,5 +40,5 @@
   # override baseName (mkForce, to win over that default) but keep the arch
   # suffix so the file is e.g. coder-box-appliance-aarch64-linux.iso — the arch
   # is visible in the name and x86_64/aarch64 ISOs don't collide in ./out.
-  image.baseName            = lib.mkForce "coder-box-appliance-${pkgs.stdenv.hostPlatform.system}";
+  image.baseName = lib.mkForce "coder-box-appliance-${pkgs.stdenv.hostPlatform.system}";
 }

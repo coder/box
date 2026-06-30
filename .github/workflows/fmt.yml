@@ -1,0 +1,52 @@
+# Formatting & linting — verifies the tree is already formatted and lint-clean.
+#
+# A single treefmt run drives every tool from one config (../../treefmt.nix):
+#   * Nix:   nixfmt (RFC-style format) + statix (anti-patterns) + deadnix (dead
+#            code).
+#   * Shell: shfmt (format) + shellcheck (lint).
+#
+# Locally, `nix fmt` applies the same tools in-place; this job runs them in
+# `--ci` mode (no cache, fail on any change) so a PR that forgot to run
+# `nix fmt` fails with the exact diff.
+#
+# Like the other workflows (see test.yml), the actual Nix command runs inside
+# the `nixos/nix` container via `docker run` — that image lacks a glibc loader
+# for GitHub's bundled Node, so JS actions (checkout) stay on the host runner
+# and only `nix` runs in the container.
+
+name: Format & lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: fmt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  treefmt:
+    name: treefmt (nixfmt, statix, deadnix, shfmt, shellcheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: nix fmt --ci
+        run: |
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              # Repo is bind-mounted and owned by a different uid; let git read
+              # it so the flake source (and treefmt) can resolve the tree.
+              git config --global --add safe.directory /work
+              # `nix fmt` runs the treefmt wrapper; `--ci` disables the cache and
+              # fails (printing a diff) if any file is not already formatted or
+              # has outstanding lint fixes.
+              nix fmt -- --ci
+            '

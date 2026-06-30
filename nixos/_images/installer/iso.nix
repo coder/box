@@ -16,10 +16,15 @@
 # ../box-turnkey.nix (turn-key Coder box). Unlike the appliance, the installer
 # is built ONLY as an ISO (no qcow2/raw disk images).
 
-{ config, lib, pkgs, self, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
-  boxRev      = config.coderBox.rev;
+  boxRev = config.coderBox.rev;
   # Short form for the boot-menu label (full 40-char hashes are unwieldy there).
   boxRevShort = if boxRev == "unknown" then "unknown" else builtins.substring 0 12 boxRev;
 
@@ -56,8 +61,8 @@ let
 in
 {
   imports = [
-    ../base/iso.nix      # shared ISO mechanics
-    ../box-turnkey.nix   # shared turn-key Coder box (login + Coder bootstrap)
+    ../base/iso.nix # shared ISO mechanics
+    ../box-turnkey.nix # shared turn-key Coder box (login + Coder bootstrap)
   ];
 
   # config.coderBox.rev is defined in ../box-turnkey.nix (shared by all image
@@ -65,7 +70,7 @@ in
   # self.rev/dirtyRev for `.#` builds and is overridden by the Makefile.
   config = {
     # ── Image identity ─────────────────────────────────────────────────────────
-    isoImage.volumeID          = "CODER_BOX_INSTALLER";
+    isoImage.volumeID = "CODER_BOX_INSTALLER";
     # Boot-menu label (BIOS/isolinux + EFI/grub). See ../appliance/iso.nix for
     # the format; leading space is required. Include the short build revision so
     # the boot menu shows exactly which image you're booting.
@@ -122,18 +127,18 @@ in
     # the bootstrap/redirect/reaper units, and template-sync are dead weight here
     # (slow startup, wasted RAM/CPU during install). Disable them — the INSTALLED
     # system still gets everything; this only affects the live installer.
-    services.coder-nixos.sysbox.enable     = lib.mkForce false;
-    services.coder-nixos.k3s.enable        = lib.mkForce false;
-    services.postgresql.enable             = lib.mkForce false;
-    virtualisation.podman.enable           = lib.mkForce false;
+    services.coder-nixos.sysbox.enable = lib.mkForce false;
+    services.coder-nixos.k3s.enable = lib.mkForce false;
+    services.postgresql.enable = lib.mkForce false;
+    virtualisation.podman.enable = lib.mkForce false;
 
-    systemd.services.coder.enable                  = false;
-    systemd.services.coder-init-admin.enable       = false;
-    systemd.services.coder-redirect.enable         = false;
-    systemd.services.coder-logstream-kube.enable   = false;
+    systemd.services.coder.enable = false;
+    systemd.services.coder-init-admin.enable = false;
+    systemd.services.coder-redirect.enable = false;
+    systemd.services.coder-logstream-kube.enable = false;
     systemd.services.coder-workspace-reaper.enable = false;
-    systemd.timers.coder-workspace-reaper.enable   = false;
-    systemd.services.coder-sync-ssh-keys.enable    = false;
+    systemd.timers.coder-workspace-reaper.enable = false;
+    systemd.services.coder-sync-ssh-keys.enable = false;
 
     # Template-sync activation script — pointless in the live installer (no
     # running Coder, empty session token).

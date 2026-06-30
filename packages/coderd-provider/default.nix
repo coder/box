@@ -12,7 +12,12 @@
 #     https://github.com/coder/terraform-provider-coderd/releases/download/v0.0.16/terraform-provider-coderd_0.0.16_linux_<arch>.zip
 # and replace the corresponding entry in `hashes` below.
 
-{ lib, stdenvNoCC, fetchurl, unzip }:
+{
+  lib,
+  stdenvNoCC,
+  fetchurl,
+  unzip,
+}:
 
 let
   version = "0.0.16";
@@ -23,9 +28,10 @@ let
   # filesystem_mirror directory must also match the running platform.
   arch =
     {
-      "x86_64-linux"  = "amd64";
+      "x86_64-linux" = "amd64";
       "aarch64-linux" = "arm64";
-    }.${stdenvNoCC.hostPlatform.system}
+    }
+    .${stdenvNoCC.hostPlatform.system}
       or (throw "coderd-provider.nix: unsupported system ${stdenvNoCC.hostPlatform.system}");
 
   # Per-arch zip hash. Update with:
@@ -36,15 +42,15 @@ let
   };
 
   providerDir = "registry.terraform.io/coder/coderd/${version}/linux_${arch}";
-  binaryName  = "terraform-provider-coderd_v${version}";
+  binaryName = "terraform-provider-coderd_v${version}";
 in
 stdenvNoCC.mkDerivation {
-  pname   = "terraform-provider-coderd";
+  pname = "terraform-provider-coderd";
   inherit version;
 
   src = fetchurl {
-    url    = "https://github.com/coder/terraform-provider-coderd/releases/download/v${version}/terraform-provider-coderd_${version}_linux_${arch}.zip";
-    hash   = hashes.${arch};
+    url = "https://github.com/coder/terraform-provider-coderd/releases/download/v${version}/terraform-provider-coderd_${version}_linux_${arch}.zip";
+    hash = hashes.${arch};
   };
 
   nativeBuildInputs = [ unzip ];
@@ -63,7 +69,7 @@ stdenvNoCC.mkDerivation {
 
   meta = {
     description = "Terraform provider for managing Coder deployments";
-    homepage    = "https://github.com/coder/terraform-provider-coderd";
-    license     = lib.licenses.asl20;
+    homepage = "https://github.com/coder/terraform-provider-coderd";
+    license = lib.licenses.asl20;
   };
 }
