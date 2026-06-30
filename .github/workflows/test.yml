@@ -229,6 +229,33 @@ jobs:
           build_kind appliance "$APPLIANCE_FULL"
           ls -lh "$dist"
 
+      # Record the exact byte size of every ISO this arch actually built, one
+      # TSV row per ISO (system, filename, bytes). The iso-table job downloads
+      # these per-arch files and renders them into a single sticky PR comment.
+      # Skipped when nothing built full (drv-only runs produce no ISOs).
+      - name: Record ISO sizes
+        if: env.INSTALLER_FULL == 'true' || env.APPLIANCE_FULL == 'true'
+        run: |
+          dist="${{ steps.build.outputs.dist }}"
+          meta="$dist/iso-sizes-${{ matrix.system }}.tsv"
+          : >"$meta"
+          for f in "$dist"/*.iso; do
+            [ -e "$f" ] || continue
+            printf '%s\t%s\t%s\n' "${{ matrix.system }}" "$(basename "$f")" "$(stat -c %s "$f")" >>"$meta"
+          done
+          cat "$meta"
+
+      # Per-arch ISO size metadata, kept tiny + short-lived. Named per system so
+      # the table job can merge both arches' files into one dir without clashing.
+      - name: Upload ISO size metadata
+        if: env.INSTALLER_FULL == 'true' || env.APPLIANCE_FULL == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: iso-meta-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/iso-sizes-${{ matrix.system }}.tsv
+          retention-days: 1
+          if-no-files-found: ignore
+
       # One artifact per kind, each bundling that kind's ISO with its .sha256
       # sidecar (a single upload-artifact step uploads its matched files
       # CONCURRENTLY, so the multi-GB ISO and its checksum go up together).
@@ -256,3 +283,112 @@ jobs:
             ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
           retention-days: 1
           if-no-files-found: error
+
+  # Render / refresh a single sticky PR comment with a table of the ISO build
+  # artifacts (kind × arch): exact size + a download link. Runs after the matrix
+  # builds, only on pull_request and only when at least one kind built a full
+  # ISO (drv-only validation runs produce no artifacts to list). Every rebuild
+  # updates the SAME comment — matched by the hidden marker — instead of posting
+  # a new one each time.
+  iso-table:
+    name: ISO artifact table
+    needs: [plan, Images]
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.plan.outputs.installer_full == 'true' || needs.plan.outputs.appliance_full == 'true')
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      # Pull both arches' per-arch size TSVs into one dir (filenames are
+      # system-suffixed, so merge-multiple can't clash).
+      - name: Download ISO size metadata
+        uses: actions/download-artifact@v7
+        with:
+          path: meta
+          pattern: iso-meta-*
+          merge-multiple: true
+
+      - name: Upsert ISO artifact table comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // 1. Collect exact ISO sizes from the per-arch TSV rows.
+            const rows = [];
+            const dir = 'meta';
+            const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+            for (const f of files) {
+              if (!f.startsWith('iso-sizes-') || !f.endsWith('.tsv')) continue;
+              const text = fs.readFileSync(path.join(dir, f), 'utf8');
+              for (const line of text.split('\n')) {
+                if (!line.trim()) continue;
+                const [system, file, bytes] = line.split('\t');
+                rows.push({ system, file, bytes: Number(bytes) });
+              }
+            }
+
+            // 2. Map each ISO artifact name -> its browser download URL.
+            const { owner, repo } = context.repo;
+            const runId = context.runId;
+            const arts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { owner, repo, run_id: runId, per_page: 100 },
+            );
+            const urlFor = (name) => {
+              const a = arts.find((x) => x.name === name);
+              return a
+                ? `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts/${a.id}`
+                : null;
+            };
+
+            // Small presentation helpers.
+            const fmtSize = (b) => {
+              if (!Number.isFinite(b) || b <= 0) return '—';
+              const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+              let i = 0, n = b;
+              while (n >= 1024 && i < u.length - 1) { n /= 1024; i += 1; }
+              return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
+            };
+            const prettyArch = (s) => ({
+              'x86_64-linux': '🖥️ x86_64',
+              'aarch64-linux': '💪 aarch64',
+            }[s] || s);
+            const kindOf = (file) => file.includes('-installer-')
+              ? { slug: 'installer', icon: '🛠️', label: 'Installer' }
+              : { slug: 'appliance', icon: '📦', label: 'Appliance' };
+
+            // 3. Build the table, sorted by kind then arch for a stable layout.
+            rows.sort((a, b) => a.file.localeCompare(b.file) || a.system.localeCompare(b.system));
+            let body = '## 📀 ISO build artifacts\n\n';
+            if (rows.length === 0) {
+              body += '_No ISO artifacts were produced in this run._\n';
+            } else {
+              body += '| Kind | Arch | Size | Download |\n|:--|:--|--:|:--:|\n';
+              for (const r of rows) {
+                const k = kindOf(r.file);
+                const url = urlFor(`coder-box-${k.slug}-${r.system}`);
+                const dl = url ? `[⬇️ \`${r.file}\`](${url})` : '—';
+                body += `| ${k.icon} ${k.label} | ${prettyArch(r.system)} | ${fmtSize(r.bytes)} | ${dl} |\n`;
+              }
+            }
+            const sha = (context.payload.pull_request?.head?.sha || context.sha).slice(0, 7);
+            body += `\n<sub>↻ Updated for \`${sha}\` · `
+              + `[run #${context.runNumber}](https://github.com/${owner}/${repo}/actions/runs/${runId}) · `
+              + `artifacts expire in ~1 day · sign in to GitHub to download.</sub>\n`;
+
+            // 4. Upsert the sticky comment, matched by this hidden marker.
+            const MARKER = '<!-- iso-build-table -->';
+            body += `\n${MARKER}`;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
