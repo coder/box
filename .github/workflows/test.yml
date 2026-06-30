@@ -1,0 +1,244 @@
+# Test Nix — evaluates the flake and builds the installer AND appliance ISOs
+# for every supported architecture.
+#
+# A `flake` job runs `nix flake check` (cheap, builds nothing) so Nix typos /
+# bad references / type errors surface fast; the matrix build jobs then realise
+# (or, drv-only, just instantiate) the images.
+#
+# Each arch builds on a native runner; the build itself runs inside the
+# official `nixos/nix` container via `docker run`. We deliberately do NOT put
+# the whole job in `container:` — the nixos/nix image lacks a standard glibc
+# loader, so GitHub's bundled Node can't run there and every JS action
+# (checkout, upload-artifact) fails with `exec .../node: no such file or
+# directory`. So checkout/upload run on the host runner and only `make` runs in
+# the container.
+#
+# One job per arch builds BOTH kinds in the SAME container (installer first,
+# appliance second). `make <kind>/iso` resolves to the runner's native
+# `builtins.currentSystem` and produces
+# out/<kind>-iso/iso/coder-box-<kind>-<arch>-linux.iso (+ a .sha256 sidecar);
+# the container /nix/store is ephemeral, so we dereference the ISOs into a host
+# /dist volume and upload from there.
+#
+# Triggers / what gets built per kind:
+#   * push to main, workflow_dispatch  → always build both full ISOs.
+#   * pull_request                     → realise a kind's full ISO only when the
+#       PR is ready-for-review (non-draft) AND its label (test-installer-iso /
+#       test-appliance-iso) is applied; otherwise (draft, or no label) that kind
+#       is just instantiated (.drv, cheap validation, no image). The `labeled`
+#       trigger means adding the label kicks off the full build.
+# A tiny `plan` job computes the per-kind plan once and a short title fragment
+# so the build job's name stays readable. The build job always runs (drafts just
+# do derivations). Verification artifacts are short-lived (1 day).
+
+name: Test Nix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # `opened`/`reopened` cover a PR created/reopened already non-draft,
+    # `ready_for_review` a draft promoted to ready, `labeled` so applying a
+    # test-*-iso label starts the full build, and `synchronize` so pushing new
+    # commits re-runs the build — re-evaluating the labels so a labelled kind
+    # is re-built (not just its derivation) on every commit.
+    types: [opened, reopened, ready_for_review, labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref/commit to build (defaults to the selected branch)"
+        required: false
+        type: string
+
+# Cancel superseded runs on the same ref; a full ISO build is expensive so
+# don't waste runners on stale commits.
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event.inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Flake evaluation — cheap, builds nothing. `nix flake check --no-build
+  # --all-systems` evaluates every flake output (nixosConfigurations, packages,
+  # …) for all declared systems (x86_64 + aarch64), catching typos / bad
+  # references / type errors in seconds. The per-kind ISO derivations are
+  # instantiated separately by the `iso` job below (its drv-only path), so this
+  # covers the flake outputs that path doesn't touch. Runs inside the nixos/nix
+  # container via `docker run` (that image lacks a glibc loader for GitHub's
+  # bundled Node, so the checkout JS action stays on the host runner).
+  flake:
+    name: Flake eval
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - name: nix flake check
+        run: |
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            nixos/nix:latest \
+            sh -euc '
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              git config --global --add safe.directory /work
+              nix flake check --impure --no-build --all-systems
+            '
+
+  # Tiny pre-job that decides, per kind, whether to build the full ISO or just
+  # instantiate the derivation, and assembles a short human title for the build
+  # job. Doing this here (rather than inline in the build job's `name:`) keeps
+  # that name a SHORT expression — `Build ${{ needs.plan.outputs.kinds }}
+  # (${{ matrix.system }})` — so the raw "Matrix:" preview / a skipped job shows
+  # something readable instead of a wall of inlined label checks.
+  plan:
+    name: Plan image targets
+    runs-on: ubuntu-latest
+    outputs:
+      # "true"/"false" per kind: realise the full ISO, or (drv-only) instantiate.
+      installer_full: ${{ steps.plan.outputs.installer_full }}
+      appliance_full: ${{ steps.plan.outputs.appliance_full }}
+      # Human title fragment, e.g. "installer & appliance ISO" or
+      # "installer ISO & appliance DRV".
+      kinds: ${{ steps.plan.outputs.kinds }}
+    steps:
+      - id: plan
+        # Non-PR events (push, manual dispatch) build both full; a PR builds a
+        # kind's full ISO only when it is ready-for-review (non-draft) AND its
+        # label is applied. Draft PRs / unlabelled kinds → drv-only.
+        env:
+          INSTALLER_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
+          APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
+        run: |
+          isuf=$([ "$INSTALLER_FULL" = "true" ] && echo ISO || echo DRV)
+          asuf=$([ "$APPLIANCE_FULL" = "true" ] && echo ISO || echo DRV)
+          # Always join the two kinds with "&". Collapse to a shared suffix when
+          # they match, otherwise spell each out.
+          if [ "$isuf" = "$asuf" ]; then
+            kinds="installer & appliance $isuf"
+          else
+            kinds="installer $isuf & appliance $asuf"
+          fi
+          {
+            echo "installer_full=$INSTALLER_FULL"
+            echo "appliance_full=$APPLIANCE_FULL"
+            echo "kinds=$kinds"
+          } >>"$GITHUB_OUTPUT"
+
+  # Job key is "Images" so the matrix shows as "Matrix: Images". `needs: plan`
+  # also means these matrix jobs are skipped if the plan job fails.
+  Images:
+    needs: plan
+    # Short, readable name — the per-kind plan is computed by the `plan` job
+    # above. e.g. "Build installer & appliance ISO (x86_64-linux)" or
+    # "Build installer ISO & appliance DRV (aarch64-linux)".
+    name: Build ${{ needs.plan.outputs.kinds }} (${{ matrix.system }})
+    runs-on: ${{ matrix.runner }}
+    env:
+      # Resolved per-kind plan from the `plan` job. Steps below branch on these.
+      INSTALLER_FULL: ${{ needs.plan.outputs.installer_full }}
+      APPLIANCE_FULL: ${{ needs.plan.outputs.appliance_full }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Empty for push/PR (checks out the event ref); honored for manual
+          # dispatch to build an arbitrary commit.
+          ref: ${{ github.event.inputs.ref }}
+
+      # Per-kind plan (full ISO vs drv only) is in the job name; the run summary
+      # below also records it. INSTALLER_FULL / APPLIANCE_FULL come from the
+      # job-level env above.
+      - name: Build images
+        id: build
+        run: |
+          # Record the per-kind plan in the run summary for quick scanning.
+          plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }
+          {
+            echo "### Build plan (${{ matrix.system }})"
+            echo "- installer: $(plan "$INSTALLER_FULL")"
+            echo "- appliance: $(plan "$APPLIANCE_FULL")"
+          } >>"$GITHUB_STEP_SUMMARY"
+          # Host /dist volume, bind-mounted into the container, where full builds
+          # drop the finished ISO + checksum (the container's /nix/store is
+          # ephemeral, so the in-tree out/ symlink would dangle on the host).
+          dist="$(mktemp -d)"
+          echo "dist=$dist" >>"$GITHUB_OUTPUT"
+          # Both kinds run in ONE container; installer first, appliance later.
+          docker run --rm \
+            -v "$PWD":/work -w /work \
+            -v "$dist":/dist \
+            -e INSTALLER_FULL -e APPLIANCE_FULL \
+            nixos/nix:latest \
+            sh -euc '
+              # The Makefile builds via "nix build --impure" and needs flakes +
+              # nix-command, which the nixos/nix image does not enable by default.
+              export NIX_CONFIG="experimental-features = nix-command flakes"
+              # Repo is bind-mounted and owned by a different uid; allow git to
+              # read it so the Makefile can stamp the build rev.
+              git config --global --add safe.directory /work
+
+              # full build → realise the ISO; make puts the image (symlink) and
+              # its .sha256 sidecar together in out/<kind>-iso/iso, so a single
+              # cp -L grabs both into /dist. Otherwise just instantiate the
+              # derivation. Bare target → native currentSystem (matrix pins the
+              # runner arch). gnumake provides "make"; git stamps the build rev.
+              build_kind() {
+                kind="$1"; full="$2"
+                if [ "$full" = "true" ]; then
+                  nix-shell -p gnumake git --run "make $kind/iso"
+                  cp -L "out/$kind-iso/iso"/* /dist/
+                else
+                  nix-shell -p gnumake git --run "make $kind/drv"
+                fi
+              }
+
+              build_kind installer "$INSTALLER_FULL"
+              build_kind appliance "$APPLIANCE_FULL"
+            '
+          ls -lh "$dist"
+
+      - name: Upload installer ISO artifact
+        if: env.INSTALLER_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-installer-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso
+          # Verification build; keep storage cost minimal.
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload installer checksum artifact
+        if: env.INSTALLER_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-installer-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/coder-box-installer-*.iso.sha256
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload appliance ISO artifact
+        if: env.APPLIANCE_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-appliance-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload appliance checksum artifact
+        if: env.APPLIANCE_FULL == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: coder-box-appliance-${{ matrix.system }}-sha256
+          path: ${{ steps.build.outputs.dist }}/coder-box-appliance-*.iso.sha256
+          retention-days: 1
+          if-no-files-found: error

@@ -6,7 +6,7 @@
 #   * run manually from the Actions tab (workflow_dispatch), supplying a tag
 #     and optionally a ref/commit to build.
 #
-# Like build.yml, each arch builds natively and the build runs inside the
+# Like test.yml, each arch builds natively and the build runs inside the
 # `nixos/nix` container via `docker run` (the whole job can't use `container:`
 # because that image lacks a glibc loader for GitHub's bundled Node, which
 # breaks every JS action). Bare `make <target>` resolves to the runner's native
@@ -93,14 +93,14 @@ jobs:
               export NIX_CONFIG="experimental-features = nix-command flakes"
               git config --global --add safe.directory /work
               # gnumake provides "make"; git lets the Makefile stamp the rev. The
-              # ISO targets also emit out/<name>.iso.sha256 sidecar checksums so
-              # release consumers can verify the download. Bare target → native
+              # ISO targets put the image and its .sha256 sidecar together in
+              # out/<target>-iso/iso, so a single cp -L grabs both (release
+              # consumers can verify the download). Bare target → native
               # currentSystem (matrix pins the matching native runner).
               nix-shell -p gnumake git --run "make $TARGET/iso"
-              # Dereference the build store symlink into the /dist volume,
-              # alongside the make-generated checksum sidecar.
-              cp -L "$outlink"/*.iso /dist/
-              cp out/*.iso.sha256 /dist/
+              # Dereference the build store symlink (+ checksum sidecar) into
+              # the /dist volume.
+              cp -L "$outlink"/* /dist/
             '
           ls -lh "$dist"
 

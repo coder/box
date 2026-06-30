@@ -40,4 +40,22 @@
   #   - openssl: install.sh uses `openssl rand` to generate the random default
   #     hostname suffix (coder-box-<random>); it's in the preflight tool checks.
   environment.systemPackages = [ pkgs.dmidecode pkgs.gum pkgs.openssl ];
+
+  # A store output that bundles the ISO together with its SHA-256 checksum, so
+  # the checksum lives in the (immutable) /nix/store right beside the image. A
+  # plain `nix build --out-link out/<target>` then surfaces both — no need to
+  # write the sidecar into the read-only store path after the fact. The ISO is
+  # symlinked (not copied) to avoid duplicating the multi-GB image; the
+  # interpolation registers it as a runtime dependency so it is GC-rooted along
+  # with this output. The checksum is written with the bare basename so
+  # `sha256sum -c <name>.iso.sha256` verifies the ISO sitting next to it, and a
+  # single `cp -L out/<target>/iso/*` copies image + sidecar together.
+  system.build.isoImageDir = pkgs.runCommand "coder-box-iso-with-checksum" { } ''
+    mkdir -p "$out/iso"
+    for iso in ${config.system.build.isoImage}/iso/*.iso; do
+      base=$(basename "$iso")
+      ln -s "$iso" "$out/iso/$base"
+      ( cd "$out/iso" && sha256sum "$base" > "$base.sha256" )
+    done
+  '';
 }
