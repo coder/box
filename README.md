@@ -106,6 +106,12 @@ image at `out/appliance-raw/coder-box-appliance-*.raw` (or
 `out/appliance-qcow2/coder-box-appliance-*.qcow2`). All names carry the arch,
 e.g. `coder-box-appliance-aarch64-linux.iso`.
 
+Every shipped image — ISO, qcow2, and raw — is built alongside a `<name>.sha256`
+sidecar in the same directory (`coder-box-appliance-*.iso.sha256`,
+`coder-box-appliance-*.qcow2.sha256`, etc.), so `sha256sum -c <name>.sha256`
+verifies the image and `cp -L out/<target>/*` (or `.../iso/*` for ISOs) copies
+image + checksum together. The build prints each checksum when it finishes.
+
 The turn-key login + Coder admin bootstrap shared by all image flavours live in
 [`nixos/_images/box-turnkey.nix`](nixos/_images/box-turnkey.nix): autologin to the `coderbox`
 desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at

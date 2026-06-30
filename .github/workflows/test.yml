@@ -21,7 +21,12 @@
 # /dist volume and upload from there.
 #
 # Triggers / what gets built per kind:
-#   * push to main, workflow_dispatch  → always build both full ISOs.
+#   * push to main                     → drv-only: just instantiate each kind's
+#       derivation (cheap validation, no image). A full ISO build on every main
+#       commit is expensive and unnecessary; releases (tags) and manual runs
+#       still produce real images.
+#   * workflow_dispatch                → always build both full ISOs (manual,
+#       on-demand image build).
 #   * pull_request                     → realise a kind's full ISO only when the
 #       PR is ready-for-review (non-draft) AND its label (test-installer-iso /
 #       test-appliance-iso) is applied; otherwise (draft, or no label) that kind
@@ -103,12 +108,13 @@ jobs:
       kinds: ${{ steps.plan.outputs.kinds }}
     steps:
       - id: plan
-        # Non-PR events (push, manual dispatch) build both full; a PR builds a
-        # kind's full ISO only when it is ready-for-review (non-draft) AND its
-        # label is applied. Draft PRs / unlabelled kinds → drv-only.
+        # Manual dispatch builds both full; push to main is drv-only; a PR
+        # builds a kind's full ISO only when it is ready-for-review (non-draft)
+        # AND its label is applied. push / draft PRs / unlabelled kinds →
+        # drv-only.
         env:
-          INSTALLER_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
-          APPLIANCE_FULL: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
+          INSTALLER_FULL: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-installer-iso')) }}
+          APPLIANCE_FULL: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'test-appliance-iso')) }}
         run: |
           isuf=$([ "$INSTALLER_FULL" = "true" ] && echo ISO || echo DRV)
           asuf=$([ "$APPLIANCE_FULL" = "true" ] && echo ISO || echo DRV)
