@@ -13,7 +13,7 @@
 #     the Coder server + PostgreSQL.
 #
 # k3s / sysbox are NOT enabled here. Set:
-#   services.coder-nixos.k3s-sysbox.enable = true;
+#   services.coder-nixos.sysbox.enable = true;
 # in hosts/<hostname>/default.nix to enable the full box stack (Coder +
 # PostgreSQL + k3s + sysbox) inside the VM.
 

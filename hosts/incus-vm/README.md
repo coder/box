@@ -92,7 +92,6 @@ cp /etc/nixos-repo/hosts/incus-vm/incus-vm.nix \
    /etc/nixos-repo/hosts/$HOSTNAME/incus-vm.nix
 
 # For bare-metal — write your own default.nix or copy from another host.
-# See hosts/qemu-arm64/ for an example layout.
 
 # Stage the files — the flake's builtins.readDir only sees tracked files.
 git -C /etc/nixos-repo add hosts/$HOSTNAME/
@@ -119,17 +118,17 @@ Then enable k3s (required for workspace provisioning):
 
 ```nix
 # sysbox-runc — each workspace pod gets its own Docker daemon (no privileged mode)
-services.coder-nixos.k3s-sysbox.enable = true;
+services.coder-nixos.sysbox.enable = true;
 ```
 
 Or for the lighter rootless-Podman variant:
 
 ```nix
-services.coder-nixos.k3s.enable = true;
+services.coder-nixos.podman.enable = true;
 ```
 
-> Only enable one. `k3s-sysbox` is required for the `k3s-sysbox` workspace
-> template; `k3s` works with `k3s-podman` and `k3s-dev`.
+> Only enable one. `sysbox` is required for the `k3s-sysbox` workspace
+> template; `podman` works with `k3s-podman` and `k3s-dev`.
 
 ### 4. Create local.nix
 

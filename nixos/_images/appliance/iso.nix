@@ -8,10 +8,10 @@
 # reboot. For a *persistent* appliance (state survives reboots) build the
 # _appliance-disk host instead (qcow2 / raw); see the Makefile / README.
 #
-# Build (hosts/_appliance_iso => nixosConfigurations._appliance_iso, see flake.nix):
+# Build (hosts/_appliance-iso => nixosConfigurations._appliance-iso, see flake.nix):
 #
 #   make appliance/iso
-#   # or: nix build .#nixosConfigurations._appliance_iso.config.system.build.isoImage
+#   # or: nix build .#nixosConfigurations._appliance-iso.config.system.build.isoImage
 #   # → out/appliance-iso/iso/coder-box-appliance-*.iso  (flash with `dd`, Ventoy, etc.)
 #
 # Composition: the ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable,

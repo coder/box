@@ -1,4 +1,4 @@
-# pkgs/sysbox-runc.nix — builds sysbox-runc 0.7.0 from the nestybox/sysbox monorepo.
+# packages/sysbox-runc — builds sysbox-runc 0.7.0 from the nestybox/sysbox monorepo.
 #
 # WHY NOT buildGoModule / go mod vendor FROM SCRATCH
 # ───────────────────────────────────────────────────
@@ -20,13 +20,13 @@
 #   GOPATH=/tmp/gopath go mod vendor   # uses cached nestybox modules
 #   cd .. && tar czf sysbox-runc-vendor-0.7.0.tar.gz sysbox-runc/vendor/
 #
-# The tarball is stored at pkgs/sysbox-runc-vendor-0.7.0.tar.gz (5.1 MB).
+# The tarball is stored at packages/sysbox-runc/sysbox-runc-vendor-0.7.0.tar.gz (5.1 MB).
 # It contains vendor/ and is extracted into sysbox-runc/ at build time.
 #
 # TO UPDATE FOR A NEW VERSION
 # ────────────────────────────
 #   1. Rebuild the vendor tarball on the target machine using the steps above.
-#   2. Replace pkgs/sysbox-runc-vendor-<version>.tar.gz with the new tarball.
+#   2. Replace packages/sysbox-runc/sysbox-runc-vendor-<version>.tar.gz with the new tarball.
 #   3. Update `version` and `src.rev` / `src.hash` below.
 #   4. Run: sudo nixos-rebuild switch
 

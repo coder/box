@@ -37,4 +37,4 @@ Workspaces run as Kubernetes pods using the **sysbox-runc** runtime, which provi
 
 ## Requirements
 
-Host must have sysbox-runc installed and registered as a k3s runtime class. Enable via `nixos/k3s-sysbox.nix` in the NixOS configuration.
+Host must have sysbox-runc installed and registered as a k3s runtime class. Enable via `services.coder-nixos.sysbox.enable = true;` (module: `nixos/modules/sysbox`) in the NixOS configuration.

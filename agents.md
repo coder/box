@@ -44,7 +44,7 @@ it and use `--flake .`) — see the `/etc/nixos` pitfall below.
 
 ## Tailscale
 
-Tailscale is managed by `nixos/tailscale.nix`. Auth key is set as `authKey` in `hosts/<host>/local.nix` (gitignored). Get a reusable key from https://login.tailscale.com/admin/settings/keys.
+Tailscale is managed by `nixos/modules/tailscale`. Auth key is set as `authKey` in `hosts/<host>/local.nix` (gitignored). Get a reusable key from https://login.tailscale.com/admin/settings/keys.
 
 **IMPORTANT:** Do NOT add `--ssh` to `extraUpFlags` in `hosts/<host>/local.nix`. Tailscale SSH takes over port 22 with browser-based auth, which will lock you out of the machine. Standard OpenSSH on port 22 is used instead.
 
@@ -198,21 +198,28 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
   local.nix.example             # template for hosts/<host>/local.nix
   nixos/
     disko-standard.nix          # shared disko config: UEFI + single-disk layout for new hosts
-    tailscale.nix               # Tailscale module
-    k3s-sysbox.nix              # k3s + sysbox runtime
-    k3s-podman.nix              # k3s + rootless Podman socket
-    screenconnect.nix           # ScreenConnect remote access client
+    modules/                    # NixOS service modules (services.coder-nixos.*)
+      k3s/                      # base single-node k3s server
+      podman/                   # k3s + rootless Podman socket runtime
+      sysbox/                   # k3s + sysbox-runc runtime
+      tailscale/                # Tailscale module
+      screenconnect/            # ScreenConnect remote access client
     _images/                    # prebuilt-image modules (appliance + installer)
       box-turnkey.nix           # shared turn-key Coder box (login + Coder bootstrap); all image hosts
       base/hardware.nix         # all-hardware (boot on arbitrary hardware)
       base/iso.nix              # shared ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
-      appliance/iso.nix         # appliance ISO module (imported by hosts/_appliance_iso)
+      appliance/iso.nix         # appliance ISO module (imported by hosts/_appliance-iso)
       installer/iso.nix         # installer ISO module (imported by hosts/_installer-iso)
-  pkgs/
-    coder.nix                   # Coder server package derivation
-    coderd-provider.nix         # terraform-provider-coderd derivation
-  hosts/
-    _appliance_iso/         # `_appliance_iso` host: ephemeral appliance ISO; no disko/facter/hardware-config
+  packages/                     # one folder per package, each with a default.nix
+    coder/                      # Coder server package (binary or from-source selector)
+    coder-binary/               # prebuilt Coder release binary
+    coder-from-source/          # Coder built from source
+    coderd-provider/            # terraform-provider-coderd derivation
+    terraform-binary/           # prebuilt Terraform release binary
+    sysbox-runc/                # sysbox-runc 0.7.0 from source (+ vendored deps tarball)
+    sysbox-ce/                  # sysbox-mgr / sysbox-fs from the CE .deb
+  hosts/                        # ONLY hosts we manage centrally (see .gitignore)
+    _appliance-iso/         # `_appliance-iso` host: ephemeral appliance ISO; no disko/facter/hardware-config
                             #   build: make appliance/iso (or appliance/iso/<arch>)
     _appliance-disk/        # `_appliance-disk` host: persistent qcow2/raw disk image (disko image builder)
                             #   build: make appliance/qcow2  |  make appliance/raw  (or .../<arch>)

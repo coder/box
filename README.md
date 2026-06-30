@@ -17,12 +17,6 @@ NixOS configuration for Coder demo and workshop boxes.
 
 > **Demo box setup**. This repo configures one or more single-purpose physical machines running Coder + k3s as self-contained workshop and demo environments. It is intentionally simple: no HA, no remote state, no cloud provider. Each machine's secrets (IPs, auth keys, passwords) live in a per-host gitignored `hosts/<host>/local.nix` file. Each box runs a Coder server, k3s (single-node), and a set of workspace templates managed by Terraform via the `coderd` provider.
 
-## Machines
-
-| Hostname | Hardware | LAN IP | Tailscale IP | Status |
-|---|---|---|---|---|
-| `coder-thinkcentre` | Lenovo ThinkCentre M70q Gen 2 | n/a | n/a | active |
-
 ## Repo Structure
 
 ```
@@ -35,23 +29,30 @@ local.nix.example          # template copied to hosts/<host>/local.nix by instal
 install.sh                 # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
 nixos/
   disko-standard.nix       # shared disko config: 1 GB EFI + ZFS root pool on a single disk
-  tailscale.nix            # Tailscale module (auth key, no --ssh flag)
-  k3s-sysbox.nix           # k3s + sysbox-runc runtime class
-  k3s-podman.nix           # k3s + rootless Podman socket
-  screenconnect.nix        # optional ScreenConnect remote access client
+  modules/                 # NixOS service modules (services.coder-nixos.*)
+    k3s/                   # base single-node k3s server
+    podman/                # k3s + rootless Podman socket runtime (enable one of podman/sysbox)
+    sysbox/                # k3s + sysbox-runc runtime class
+    tailscale/             # Tailscale module (auth key, no --ssh flag)
+    screenconnect/         # optional ScreenConnect remote access client
   _images/                 # prebuilt-image modules (appliance + installer)
     box-turnkey.nix        # shared turn-key Coder box (login + Coder bootstrap); all image hosts
     base/                  # primitives shared by every image
       hardware.nix         # all-hardware (boot on arbitrary hardware)
       iso.nix              # ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
     appliance/
-      iso.nix              # appliance ISO module (hosts/_appliance_iso)
+      iso.nix              # appliance ISO module (hosts/_appliance-iso)
     installer/
       iso.nix              # installer ISO module (hosts/_installer-iso)
-pkgs/
-  coder.nix                # custom Coder server package
-  coderd-provider.nix      # terraform-provider-coderd package
-hosts/
+packages/                  # one folder per package, each with a default.nix
+  coder/                   # custom Coder server package (binary or from-source selector)
+  coder-binary/            # prebuilt Coder release binary
+  coder-from-source/       # Coder built from source (buildGoModule)
+  coderd-provider/         # terraform-provider-coderd package
+  terraform-binary/        # prebuilt Terraform release binary (BSL — not in cache.nixos.org)
+  sysbox-runc/             # sysbox-runc 0.7.0 from source (+ vendored deps tarball)
+  sysbox-ce/               # sysbox-mgr / sysbox-fs extracted from the CE .deb
+hosts/                     # ONLY hosts we manage centrally (see .gitignore)
   coder-thinkcentre/       # folder name = hostname; default.nix has a header comment with hardware model
     default.nix            # host module: imports facter/legacy hardware-config + local.nix
     hardware-configuration.nix  # legacy nixos-generate-config output (fallback)
@@ -59,7 +60,11 @@ hosts/
     local.nix              # gitignored: admin creds, secrets, SSH users
     templates/
       nook-android/        # Workspace: build trmnl-nook-simple-touch APK
-  _appliance_iso/          # `_appliance_iso` host: ephemeral appliance ISO (no disk install)
+  incus-vm/                # template host config for a box running inside an Incus VM
+    default.nix            # copy to hosts/<hostname>/; imports incus-vm.nix + local.nix
+    incus-vm.nix           # QEMU guest agents, networkd DHCP, headless (no desktop stack)
+    README.md              # Incus VM setup guide
+  _appliance-iso/          # `_appliance-iso` host: ephemeral appliance ISO (no disk install)
     default.nix            # imports nixos/_images/appliance/iso.nix (no disko/facter/hardware-config)
   _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
     default.nix            # imports disko-standard.nix + nixos/_images/box-turnkey.nix
@@ -81,7 +86,7 @@ is also the hostname, so `nixos-rebuild switch --flake .` auto-selects the
 right config on the running box. Adding a new host means creating a host
 folder, no flake.nix edit. The installer does this for you.
 
-Hosts whose folder name starts with an underscore (`_appliance_iso`,
+Hosts whose folder name starts with an underscore (`_appliance-iso`,
 `_appliance-disk`, `_installer-iso`) are image builds, not per-machine installs: they
 do **not** get the folder-name hostname and instead inherit the central
 default `networking.hostName = "coder-box"` (set in `configuration.nix`).
@@ -141,7 +146,7 @@ These prebuilt images are called **appliances** (the box, prebuilt — no
 
 | Format | Host | State | Status | Build |
 |---|---|---|---|---|
-| **iso** (live, ephemeral) | `_appliance_iso` | tmpfs overlay — wiped on reboot | verified | `make appliance/iso` |
+| **iso** (live, ephemeral) | `_appliance-iso` | tmpfs overlay — wiped on reboot | verified | `make appliance/iso` |
 | **qcow2** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/qcow2` |
 | **raw** (persistent disk) | `_appliance-disk` | persists across reboots | ⚠️ untested | `make appliance/raw` |
 
@@ -170,11 +175,11 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 `/etc/motd`). Change these before sharing an image by dropping a gitignored
 `hosts/<host>/local.nix` (same shape as `local.nix.example`).
 
-### Appliance ISO (`_appliance_iso`)
+### Appliance ISO (`_appliance-iso`)
 
 The appliance root filesystem is the squashfs + tmpfs overlay from nixpkgs'
 `iso-image.nix`, so there's no partition to format or mount and **all state is
-discarded on reboot**. `hosts/_appliance_iso/default.nix` imports
+discarded on reboot**. `hosts/_appliance-iso/default.nix` imports
 [`nixos/_images/appliance/iso.nix`](nixos/_images/appliance/iso.nix) (which pulls in `base/iso.nix` + `box-turnkey.nix`) —
 **no** `disko-standard.nix`, `hardware-configuration.nix`, or `facter.json`.
 The installed-machine `systemd-boot` / EFI-variable settings are forced off; the

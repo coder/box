@@ -1,4 +1,4 @@
-# tailscale.nix — optional Tailscale integration
+# nixos/modules/tailscale — optional Tailscale integration
 #
 # Enable in the host's `hosts/<host>/local.nix`:
 #   services.coder-nixos.tailscale = {

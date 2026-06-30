@@ -36,12 +36,14 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = lib.genAttrs systems;
 
-      # Each subdirectory of ./hosts that contains a default.nix becomes a
-      # nixosConfigurations entry. For install hosts the folder name IS the
-      # hostname, so `nixos-rebuild switch --flake .` auto-selects the right
+      # ./hosts holds ONLY the hosts we manage centrally — our own real machines
+      # plus the appliance/installer image builds we ship (see .gitignore, which
+      # ignores user-dropped hosts). Each subdirectory that contains a default.nix
+      # becomes a nixosConfigurations entry. For install hosts the folder name IS
+      # the hostname, so `nixos-rebuild switch --flake .` auto-selects the right
       # config on the running box without needing `.#<attr>`. Adding a new host
       # means just creating ./hosts/<hostname>/default.nix; no flake.nix edit.
-      # (Underscore-prefixed folders like _appliance_iso, _appliance-disk, and
+      # (Underscore-prefixed folders like _appliance-iso, _appliance-disk, and
       # _installer-iso are image builds that skip the folder-name hostname; see
       # mkHost below.)
       hostNames = lib.attrNames (lib.filterAttrs
@@ -64,7 +66,7 @@
         ]
         # Install hosts use their folder name as the hostname so
         # `nixos-rebuild switch --flake .` auto-selects the right config on the
-        # running box. Underscore-prefixed folders (e.g. _appliance_iso,
+        # running box. Underscore-prefixed folders (e.g. _appliance-iso,
         # _appliance-disk) are image/appliance builds whose names aren't valid
         # hostnames and aren't installed per-machine; they fall through to the
         # central default (networking.hostName = "coder-box" in

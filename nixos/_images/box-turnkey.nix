@@ -2,7 +2,7 @@
 # into a fully-configured, ready-to-use Coder box with no install step.
 #
 # Shared by every Coder box image flavour:
-#   - nixos/_images/appliance/iso.nix   (ephemeral appliance ISO: hosts/_appliance_iso)
+#   - nixos/_images/appliance/iso.nix   (ephemeral appliance ISO: hosts/_appliance-iso)
 #   - nixos/_images/installer/iso.nix   (installer ISO: hosts/_installer-iso)
 #   - hosts/_appliance-disk/             (persistent disk image: qcow2 / raw)
 #
