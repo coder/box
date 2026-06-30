@@ -181,6 +181,13 @@ jobs:
       # job-level env above.
       - name: Build images
         id: build
+        env:
+          # These are verification images, not shipped artifacts, so trade ISO
+          # size for build speed: a low squashfs compression level is far faster
+          # than the nixpkgs default (zstd level 19), which otherwise dominates
+          # the build — and the rev baked into /etc forces that recompress on
+          # every commit regardless of caching. Releases keep the slow default.
+          ISO_COMPRESSION: zstd -Xcompression-level 3
         run: |
           # Record the per-kind plan in the run summary for quick scanning.
           plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }

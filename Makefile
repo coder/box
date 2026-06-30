@@ -60,6 +60,15 @@ GIT_REV := $(shell git rev-parse HEAD 2>/dev/null)$(shell git diff-index --quiet
 # Normalize an arch token to a *-linux triple: $(call norm_arch,aarch64) -> aarch64-linux
 norm_arch = $(if $(filter %-linux,$(1)),$(1),$(1)-linux)
 
+# Optional squashfs compression override for ISO builds. Empty = the nixpkgs
+# default (zstd -Xcompression-level 19): maximum ratio, but the SLOWEST setting,
+# and it dominates ISO build time for the full GUI box. CI sets a fast level
+# (e.g. `make installer/iso ISO_COMPRESSION='zstd -Xcompression-level 3'`) to cut
+# build time at the cost of a slightly larger image; releases keep the default
+# so shipped ISOs stay small. Expands to the module field that box_iso injects.
+ISO_COMPRESSION ?=
+iso_comp_field = $(if $(ISO_COMPRESSION),isoImage.squashfsCompression = "$(ISO_COMPRESSION)";,)
+
 # Single build helper used by every target. extendModules lets us override
 # nixpkgs.hostPlatform (per-arch) and the disko image format from one recipe,
 # so adding a format/arch is just a thin target below — no duplicated nix
@@ -136,9 +145,9 @@ endef
 
 # ── installer/iso — installer ISO (hosts/_installer-iso); ISO only ────────────
 installer/iso:
-	$(call box_iso,_installer-iso,isoImageDir,,)
+	$(call box_iso,_installer-iso,isoImageDir,$(iso_comp_field),)
 installer/iso/%:
-	$(call box_iso,_installer-iso,isoImageDir,,$*)
+	$(call box_iso,_installer-iso,isoImageDir,$(iso_comp_field),$*)
 
 # ── installer/drv — instantiate the installer ISO derivation (no build) ───────
 installer/drv:
@@ -148,9 +157,9 @@ installer/drv/%:
 
 # ── appliance/iso — ephemeral appliance ISO (hosts/_appliance-iso) ───────────
 appliance/iso:
-	$(call box_iso,_appliance-iso,isoImageDir,,)
+	$(call box_iso,_appliance-iso,isoImageDir,$(iso_comp_field),)
 appliance/iso/%:
-	$(call box_iso,_appliance-iso,isoImageDir,,$*)
+	$(call box_iso,_appliance-iso,isoImageDir,$(iso_comp_field),$*)
 
 # ── appliance/drv — instantiate the appliance ISO derivation (no build) ───────
 appliance/drv:
