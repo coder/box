@@ -53,19 +53,23 @@ Tailscale is managed by `nixos/modules/tailscale`. Auth key is set as `authKey` 
 ## Formatting & Linting
 
 Nix and shell files are formatted/linted with [treefmt](https://github.com/numtide/treefmt)
-(config in `treefmt.nix`): `nixfmt` + `statix` + `deadnix` for Nix, and `shfmt`
-+ `shellcheck` for shell.
+(config in `treefmt.nix`). Formatting and linting are kept separate:
+
+- **Format:** `nixfmt` (Nix) + `shfmt` (shell)
+- **Lint:** `statix` + `deadnix` (Nix) + `shellcheck` (shell)
 
 ```sh
-# Format and apply lint fixes across the whole tree:
-nix fmt
+# Format the whole tree in place — run before committing:
+make fmt
 
-# Verify only (what CI runs) — fails with a diff if anything is unformatted:
-nix fmt -- --ci
+# Check-only (no writes); these are what CI runs and fail with a diff:
+make fmt/check   # formatting only
+make lint        # linting only
 ```
 
-CI enforces this via `.github/workflows/fmt.yml`; `nix flake check` also runs the
-same check as `checks.<system>.formatting`. Run `nix fmt` before committing.
+CI enforces this via `.github/workflows/fmt.yml`, which runs the format check and
+the lint check as two separate jobs — neither modifies the tree, they only fail
+if something is off. Run `make fmt` to fix formatting locally.
 
 ## Git Workflow
 
