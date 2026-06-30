@@ -13,7 +13,7 @@
 # runner with nix-installer-action (flakes enabled) and run `make` directly —
 # GNU Make is preinstalled on the GitHub Ubuntu runners.
 
-name: Format & lint
+name: Code quality
 
 on:
   push:
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   format:
-    name: Format check (nixfmt, shfmt)
+    name: Formatting
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -43,7 +43,7 @@ jobs:
         run: make fmt/check
 
   lint:
-    name: Lint (statix, deadnix, shellcheck)
+    name: Lint
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
