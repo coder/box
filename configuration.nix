@@ -489,8 +489,11 @@ in
     programs.git.config.safe.directory = [ "/etc/nixos-repo" ];
 
     # ── Coder server ──────────────────────────────────────────────────────────
-    # Base env vars live here. Secrets (admin creds, OAuth, etc.) are merged in
-    # via systemd.services.coder.environment in hosts/<host>/local.nix; no EnvironmentFile.
+    # Base env vars live here. Server secrets (e.g. OAuth) are merged in via
+    # systemd.services.coder.environment in hosts/<host>/local.nix; no
+    # EnvironmentFile. Admin bootstrap creds (CODER_ADMIN_*) are NOT set here —
+    # they live on coder-init-admin.service so they stay off the long-running
+    # server's environment.
     systemd.services.coder = {
       description = "Coder Server";
       wantedBy = [ "multi-user.target" ];
@@ -538,7 +541,9 @@ in
     };
 
     # ── Admin user bootstrap ──────────────────────────────────────────────────
-    # Reads CODER_ADMIN_* from coder.service environment (set via local.nix).
+    # Reads CODER_ADMIN_* from this service's own environment (set via
+    # local.nix as systemd.services.coder-init-admin.environment), keeping the
+    # admin credentials off the long-running coder.service.
     # Creates a local admin account once; sentinel prevents re-running.
     # If CODER_ADMIN_EMAIL is unset, skips and directs user to the browser wizard.
     systemd.services.coder-init-admin = {
@@ -547,8 +552,10 @@ in
       after = [ "coder.service" ];
       requires = [ "coder.service" ];
 
-      # Inherit the full coder.service environment so CODER_ADMIN_* and
-      # CODER_PG_CONNECTION_URL are available without duplication.
+      # Inherit the coder.service environment so CODER_PG_CONNECTION_URL (and the
+      # other server vars) are available without duplication. The CODER_ADMIN_*
+      # credentials are merged in on top via the coder-init-admin.environment
+      # definition in hosts/<host>/local.nix (NixOS merges attrset options).
       inherit (config.systemd.services.coder) environment;
 
       serviceConfig = {
@@ -687,7 +694,10 @@ in
       ];
       requires = [ "postgresql.service" ];
 
-      inherit (config.systemd.services.coder) environment;
+      # Step 8 mints a session token using CODER_ADMIN_EMAIL/PASSWORD, so pull in
+      # the coder-init-admin environment (which itself includes the coder.service
+      # vars plus the CODER_ADMIN_* credentials from local.nix).
+      inherit (config.systemd.services.coder-init-admin) environment;
 
       serviceConfig = {
         Type = "oneshot";
