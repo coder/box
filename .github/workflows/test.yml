@@ -354,8 +354,8 @@ jobs:
             };
             const prettyArch = (s) => s.replace(/-linux$/, '');
             const kindOf = (file) => file.includes('-installer-')
-              ? { slug: 'installer', icon: '🛠️', label: 'Installer' }
-              : { slug: 'appliance', icon: '📦', label: 'Appliance' };
+              ? { slug: 'installer', label: 'Installer' }
+              : { slug: 'appliance', label: 'Appliance' };
 
             // 3. Build the table, sorted by kind then arch for a stable layout.
             rows.sort((a, b) => a.file.localeCompare(b.file) || a.system.localeCompare(b.system));
@@ -368,7 +368,7 @@ jobs:
                 const k = kindOf(r.file);
                 const url = urlFor(`coder-box-${k.slug}-${r.system}`);
                 const dl = url ? `[⬇️ \`${r.file}\`](${url})` : '—';
-                body += `| ${k.icon} ${k.label} | ${prettyArch(r.system)} | ${fmtSize(r.bytes)} | ${dl} |\n`;
+                body += `| ${k.label} | ${prettyArch(r.system)} | ${fmtSize(r.bytes)} | ${dl} |\n`;
               }
             }
             const sha = (context.payload.pull_request?.head?.sha || context.sha).slice(0, 7);
