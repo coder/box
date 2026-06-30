@@ -25,8 +25,6 @@
 
 let
   boxRev = config.coderBox.rev;
-  # Short form for the boot-menu label (full 40-char hashes are unwieldy there).
-  boxRevShort = if boxRev == "unknown" then "unknown" else builtins.substring 0 12 boxRev;
 
   # Launcher run inside the preopened Konsole: cd into the baked repo, run the
   # installer as root (passwordless sudo is configured in configuration.nix),
@@ -78,14 +76,13 @@ in
     # ── Image identity ─────────────────────────────────────────────────────────
     isoImage.volumeID = "CODER_BOX_INSTALLER";
     # Boot-menu label (BIOS/isolinux + EFI/grub). See ../appliance/iso.nix for
-    # the format; leading space is required. Include the short build revision so
-    # the boot menu shows exactly which image you're booting. The label is the
-    # same for every build — " - Coder Box Installer (<rev>)" — with NO PR
-    # identity: a PR title would overflow the fixed-width menu line, and even the
-    # PR number is kept off the menu to keep the entry clean. For PR-preview
-    # builds the full "PR #N: <title>" is printed by the installer console banner
-    # above and recorded at /etc/coder-box-pr instead.
-    isoImage.appendToMenuLabel = " - Coder Box Installer (${boxRevShort})";
+    # the format; leading space is required. The label is the same for every
+    # build — " - Coder Box Installer" — with NO build identity: the commit
+    # short-sha (and, for PR previews, the PR number + title) live in the
+    # boot-screen footer label instead (coderBox.bootLabel, see ../base/iso.nix),
+    # so the menu entry stays clean. The full "PR #N: <title>" is also printed by
+    # the installer console banner and recorded at /etc/coder-box-pr.
+    isoImage.appendToMenuLabel = " - Coder Box Installer";
 
     # Record the full build revision for install.sh to print (the baked repo
     # under /etc/nixos-repo has no .git, so the script can't get it from git).
