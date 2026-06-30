@@ -216,6 +216,26 @@ in
       variant = "";
     };
 
+    # ── Skip GNOME's first-run welcome experience ─────────────────────────────
+    # Out of the box GNOME greets every new login with two things this appliance
+    # doesn't want:
+    #   1. gnome-tour — the "Welcome to NixOS / Take the Tour" dialog. GNOME
+    #      Shell auto-launches it from its .desktop file on first login (it ships
+    #      in the default GNOME package set), so the only way to suppress it is to
+    #      drop the package via environment.gnome.excludePackages.
+    #   2. The Activities overview (the app/window grid) shown at session
+    #      startup. GNOME has no gsetting to disable this, so we ship the
+    #      "no-overview" Shell extension and enable it for the session, which
+    #      lands you on the bare desktop instead of the overview.
+    # (the no-overview extension package is added to environment.systemPackages
+    # in the shared package list below.)
+    environment.gnome.excludePackages = [ pkgs.gnome-tour ];
+    programs.dconf.profiles.user.databases = [
+      {
+        settings."org/gnome/shell".enabled-extensions = [ "no-overview@fthx" ];
+      }
+    ];
+
     # ── Audio ─────────────────────────────────────────────────────────────────
     services.pulseaudio.enable = false;
     security.rtkit.enable = true;
@@ -307,6 +327,9 @@ in
       terraform
       gh
       vlc
+      # GNOME Shell extension that suppresses the Activities overview shown at
+      # session startup (enabled via programs.dconf above). See the Desktop block.
+      gnomeExtensions.no-overview
     ];
 
     nix.settings.experimental-features = [
