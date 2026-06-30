@@ -17,68 +17,6 @@ NixOS configuration for Coder demo and workshop boxes.
 
 > **Demo box setup**. This repo configures one or more single-purpose physical machines running Coder + k3s as self-contained workshop and demo environments. It is intentionally simple: no HA, no remote state, no cloud provider. Each machine's secrets (IPs, auth keys, passwords) live in a per-host gitignored `hosts/<host>/local.nix` file. Each box runs a Coder server, k3s (single-node), and a set of workspace templates managed by Terraform via the `coderd` provider.
 
-## Repo Structure
-
-```
-flake.nix                  # entry point: nixosConfigurations.<host> per machine
-flake.lock                 # pinned nixpkgs / disko / nixos-facter-modules
-configuration.nix          # shared NixOS config (all machines)
-Makefile                   # image build targets: appliance/{iso,qcow2,raw}, installer/iso [/<arch>]
-local.nix.example          # template copied to hosts/<host>/local.nix by install.sh
-.gitignore                 # ignores hosts/*/local.nix
-install.sh                 # one-shot installer: disko + nixos-install + bake /etc/nixos-repo
-nixos/
-  disko-standard.nix       # shared disko config: 1 GB EFI + ZFS root pool on a single disk
-  modules/                 # NixOS service modules (services.coder-nixos.*)
-    k3s/                   # base single-node k3s server
-    podman/                # k3s + rootless Podman socket runtime (enable one of podman/sysbox)
-    sysbox/                # k3s + sysbox-runc runtime class
-    tailscale/             # Tailscale module (auth key, no --ssh flag)
-    screenconnect/         # optional ScreenConnect remote access client
-  _images/                 # prebuilt-image modules (appliance + installer)
-    box-turnkey.nix        # shared turn-key Coder box (login + Coder bootstrap); all image hosts
-    base/                  # primitives shared by every image
-      hardware.nix         # all-hardware (boot on arbitrary hardware)
-      iso.nix              # ISO mechanics (iso-image.nix, EFI/BIOS/USB bootable, bootloader)
-    appliance/
-      iso.nix              # appliance ISO module (hosts/_appliance-iso)
-    installer/
-      iso.nix              # installer ISO module (hosts/_installer-iso)
-packages/                  # one folder per package, each with a default.nix
-  coder/                   # custom Coder server package (binary or from-source selector)
-  coder-binary/            # prebuilt Coder release binary
-  coder-from-source/       # Coder built from source (buildGoModule)
-  coderd-provider/         # terraform-provider-coderd package
-  terraform-binary/        # prebuilt Terraform release binary (BSL — not in cache.nixos.org)
-  sysbox-runc/             # sysbox-runc 0.7.0 from source (+ vendored deps tarball)
-  sysbox-ce/               # sysbox-mgr / sysbox-fs extracted from the CE .deb
-hosts/                     # ONLY hosts we manage centrally (see .gitignore)
-  coder-thinkcentre/       # folder name = hostname; default.nix has a header comment with hardware model
-    default.nix            # host module: imports facter/legacy hardware-config + local.nix
-    hardware-configuration.nix  # legacy nixos-generate-config output (fallback)
-    facter.json            # OPTIONAL: nixos-facter hardware report; supersedes hardware-configuration.nix
-    local.nix              # gitignored: admin creds, secrets, SSH users
-    templates/
-      nook-android/        # Workspace: build trmnl-nook-simple-touch APK
-  incus-vm/                # template host config for a box running inside an Incus VM
-    default.nix            # copy to hosts/<hostname>/; imports incus-vm.nix + local.nix
-    incus-vm.nix           # QEMU guest agents, networkd DHCP, headless (no desktop stack)
-    README.md              # Incus VM setup guide
-  _appliance-iso/          # `_appliance-iso` host: ephemeral appliance ISO (no disk install)
-    default.nix            # imports nixos/_images/appliance/iso.nix (no disko/facter/hardware-config)
-  _appliance-disk/         # `_appliance-disk` host: persistent qcow2/raw disk image
-    default.nix            # imports disko-standard.nix + nixos/_images/box-turnkey.nix
-  _installer-iso/          # `_installer-iso` host: installer ISO (ISO only; installs box onto hardware)
-    default.nix            # imports nixos/_images/installer/iso.nix
-coderd/
-  main.tf                  # manages all Coder templates via coderd Terraform provider
-  templates/
-    coder-cli/             # Workspace: oss-dogfood image (docker CLI, terraform, gh, go, node, etc.)
-    k3s-podman/            # Workspace: k3s + rootless Podman Docker socket
-    k3s-sysbox/            # Workspace: k3s + sysbox-runc, full Docker-in-workspace
-    k3s-dev/               # Workspace: language demo (python, node, go, java, rust)
-```
-
 This repo is a Nix flake. `flake.nix` auto-discovers every subdirectory of
 `./hosts/` that contains a `default.nix` and exposes it as
 `nixosConfigurations.<folder-name>`. For normal install hosts the folder name
