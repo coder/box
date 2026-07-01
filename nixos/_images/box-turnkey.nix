@@ -69,11 +69,13 @@ let
   # "<short-sha>@<branch>" form (branch omitted when unknown/detached).
   versionStamp = revShort + lib.optionalString (branchClean != "") "@${branchClean}";
 
-  # Boot-screen label (the GRUB footer in ../base/iso.nix). ALWAYS present so the
-  # image's identity is visible on the boot screen regardless of build type:
-  #   with a PR:    "Coder Box - PR #46: <title> (<short-sha>@<branch>)"
-  #   without a PR: "Coder Box - <short-sha>@<branch>"
-  bootLabel = "Coder Box - " + (if prFull != "" then "${prFull} (${versionStamp})" else versionStamp);
+  # Boot-screen footer (the GRUB label(s) in ../base/iso.nix), rendered on up to
+  # two lines so a long PR title doesn't overflow the screen width:
+  #   line 1 (always): "Coder Box - <short-sha>@<branch>"
+  #   line 2 (PR only): "(PR #46: <title>)"
+  # A non-PR build shows only line 1.
+  bootLabelLine1 = "Coder Box - ${versionStamp}";
+  bootLabelLine2 = lib.optionalString (prFull != "") "(${prFull})";
 in
 {
   imports = [
@@ -146,15 +148,22 @@ in
     description = "Full PR identity (number + untruncated title) for off-menu surfaces (empty for non-PR builds).";
   };
 
-  # Boot-screen label (the GRUB footer in ../base/iso.nix), e.g.
-  # "Coder Box - PR #46: <title> (abc123def456@my-branch)" or, without a PR,
-  # "Coder Box - abc123def456@my-branch". Always non-empty.
-  options.coderBox.bootLabel = lib.mkOption {
+  # Boot-screen footer, split across up to two GRUB labels (../base/iso.nix):
+  #   line 1 (always):  "Coder Box - abc123def456@my-branch"
+  #   line 2 (PR only): "(PR #46: <title>)"  (empty string on non-PR builds)
+  options.coderBox.bootLabelLine1 = lib.mkOption {
     type = lib.types.str;
     internal = true;
     readOnly = true;
-    default = bootLabel;
-    description = "Boot-screen footer label (build identity: PR + short-sha@branch); always present.";
+    default = bootLabelLine1;
+    description = "First boot-screen footer line (Coder Box - short-sha@branch); always present.";
+  };
+  options.coderBox.bootLabelLine2 = lib.mkOption {
+    type = lib.types.str;
+    internal = true;
+    readOnly = true;
+    default = bootLabelLine2;
+    description = "Second boot-screen footer line ((PR #N: title)); empty on non-PR builds.";
   };
 
   config = {
