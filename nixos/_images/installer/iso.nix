@@ -1,10 +1,23 @@
 # Installer ISO module — boots the Coder box to install it onto real hardware.
 #
-# For now this is intentionally identical to the appliance ISO (full GUI box +
-# turn-key Coder bootstrap), differing in image identity, an auto-run installer
-# console, and having the Coder runtime services switched off (the installer
-# doesn't need a live Coder stack). The eventual minimal, GUI-less installer is
-# deferred.
+# Unlike the appliance ISO, the installer runs GUI-LESS: it boots straight to a
+# text console on tty1 that auto-runs the installer, with the GNOME/Wayland
+# desktop (and the Coder runtime stack) switched off. It shares the turn-key
+# module only for the baked /etc/nixos-repo + build identity; it deliberately
+# does NOT bring up GNOME.
+#
+# Why no desktop here (this matters — it used to run the full GNOME session):
+# install.sh has to `nix build` the target host's closure, which realises a few
+# host-specific derivations that aren't in the baked store (e.g.
+# nixos-generate-config's perl env — it depends on the installed host's
+# facter/hardware inputs, so it can't be pre-baked into any image). Building
+# those reads the rest of the store from the squashfs on the (slow, often
+# emulated) live medium. When GNOME Shell + Mutter were also running on software
+# rendering (llvmpipe), the combined load overwhelmed the medium and store reads
+# failed with EIO ("Input/output error" reading glibc headers), aborting the
+# build. A bare console removes GNOME entirely: the install build is the only
+# load, reads stay reliable, and the installer starts deterministically instead
+# of racing gnome-terminal's D-Bus server.
 #
 # Build (hosts/_installer-iso => nixosConfigurations._installer-iso, see flake.nix):
 #
@@ -26,7 +39,7 @@
 let
   boxRev = config.coderBox.rev;
 
-  # Launcher run inside the preopened terminal: cd into the baked repo, run the
+  # Launcher run on the tty1 installer console: cd into the baked repo, run the
   # installer as root (passwordless sudo is configured in configuration.nix),
   # and — whatever happens — drop the user into an interactive bash shell so a
   # failed install leaves them at a prompt to inspect/retry instead of a dead
@@ -94,46 +107,45 @@ in
     # preview ISO has the exact same file name as a release build.
     image.baseName = lib.mkForce "coder-box-installer-${pkgs.stdenv.hostPlatform.system}";
 
-    # ── Auto-launch a full-screen terminal that runs the installer ─────────────
-    # box-turnkey.nix autologins straight into the GNOME (Wayland) desktop. For
-    # the installer we want the install to start on its own: a system-wide XDG
-    # autostart entry opens GNOME Terminal full-screen on session start and runs
-    # the installer launcher (`gnome-terminal -- <launcher>`), which
-    # `sudo ./install.sh`s and drops to an interactive bash shell if it fails.
-    environment.systemPackages = [ pkgs.gnome-terminal ];
-    environment.etc."xdg/autostart/coder-box-installer-terminal.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Coder Box Installer Console
-      Comment=Run the coder/box installer in a full-screen terminal
-      Exec=${pkgs.gnome-terminal}/bin/gnome-terminal --full-screen --working-directory=/etc/nixos-repo -- ${installerLauncher}
-      Terminal=false
-      X-GNOME-Autostart-enabled=true
-      OnlyShowIn=GNOME;
-    '';
+    # ── Boot to a text console, not the GNOME desktop ──────────────────────────
+    # The appliance and the installed box run GNOME on Wayland (configuration.nix
+    # + box-turnkey.nix). The installer does NOT: force the whole desktop stack
+    # off so tty1 comes up as a plain text console. This is what keeps the
+    # install-time `nix build` from failing with EIO on the live medium (see the
+    # header comment) and also drops GNOME from the installer's closure, shrinking
+    # the image. mkForce beats the mkDefault/normal values set in the shared
+    # modules.
+    services.xserver.enable = lib.mkForce false;
+    services.displayManager.gdm.enable = lib.mkForce false;
+    services.desktopManager.gnome.enable = lib.mkForce false;
+    services.displayManager.autoLogin.enable = lib.mkForce false;
 
-    # The installed box autostarts Firefox on the Coder dashboard
-    # (configuration.nix → coder-box-open-dashboard.desktop). The installer has
-    # no running Coder stack (coder/coder-redirect are disabled below), so drop
-    # that autostart here — the installer session should only run the installer
-    # console above.
-    environment.etc."xdg/autostart/coder-box-open-dashboard.desktop".enable = lib.mkForce false;
-
-    # ── Never prompt for a password to get in ──────────────────────────────────
-    # Login is already passwordless (box-turnkey coderbox autologin + passwordless
-    # sudo). Disable GNOME's screen lock / idle blanking (idle auto-lock and the
-    # idle-delay screensaver) so the installer is never locked or blanked mid
-    # install. Shipped as a system dconf default for the autologin user. (The
-    # appliance keeps the default locker.)
-    programs.dconf.profiles.user.databases = [
-      {
-        settings = {
-          "org/gnome/desktop/screensaver".lock-enabled = false;
-          "org/gnome/desktop/session".idle-delay = lib.gvariant.mkUint32 0;
-          "org/gnome/settings-daemon/plugins/power".sleep-inactive-ac-type = "nothing";
-        };
-      }
-    ];
+    # ── Auto-run the installer on tty1 ─────────────────────────────────────────
+    # Replace getty on tty1 with a service that runs the installer launcher
+    # directly, with a real controlling terminal (StandardInput=tty + TTYPath) so
+    # install.sh's gum TUI prompts work. Type=idle waits for boot output to
+    # settle first. On failure the launcher drops to an interactive shell on the
+    # same tty; on success install.sh reboots.
+    systemd.services."getty@tty1".enable = false;
+    systemd.services.coder-box-installer = {
+      description = "Coder Box installer console (tty1)";
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "multi-user.target"
+        "systemd-user-sessions.service"
+      ];
+      conflicts = [ "getty@tty1.service" ];
+      serviceConfig = {
+        Type = "idle";
+        ExecStart = installerLauncher;
+        StandardInput = "tty";
+        StandardOutput = "tty";
+        TTYPath = "/dev/tty1";
+        TTYReset = true;
+        TTYVHangup = true;
+        Restart = "no";
+      };
+    };
 
     # ── Installer ergonomics ───────────────────────────────────────────────────
     # `sudo ./install.sh` from the baked /etc/nixos-repo works because the script
