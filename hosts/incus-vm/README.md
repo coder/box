@@ -148,7 +148,7 @@ Edit `hosts/$HOSTNAME/local.nix` and at minimum set:
 ```nix
 services.coder-nixos.lanIp = "192.168.x.x";  # VM's primary IP
 
-systemd.services.coder.environment = {
+systemd.services.coder-init-admin.environment = {
   CODER_ADMIN_EMAIL    = "you@example.com";
   CODER_ADMIN_USERNAME = "admin";
   CODER_ADMIN_PASSWORD = "changeme";

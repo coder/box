@@ -233,11 +233,13 @@ in
       initialPassword = "PleaseChangeMe1234";
     };
 
-    # coder-init-admin.service reads CODER_ADMIN_* from coder.service's
+    # coder-init-admin.service reads CODER_ADMIN_* from its own service
     # environment and creates a local admin on first boot, then mints a session
     # token and deploys the templates from /etc/nixos-repo/coderd. With these set
-    # the Coder instance is ready to use immediately.
-    systemd.services.coder.environment = {
+    # the Coder instance is ready to use immediately. These admin credentials are
+    # only needed by the bootstrap service, so they are kept off the long-running
+    # coder.service environment.
+    systemd.services.coder-init-admin.environment = {
       CODER_ADMIN_EMAIL = "admin@coder.com";
       CODER_ADMIN_USERNAME = "admin";
       CODER_ADMIN_PASSWORD = "PleaseChangeMe1234";

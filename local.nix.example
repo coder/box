@@ -31,20 +31,26 @@ in
   # Use the email address linked to your GitHub account so that OAuth login
   # merges into this admin account automatically.
   # Skipped if CODER_ADMIN_EMAIL is empty (complete the wizard in the browser instead).
-  systemd.services.coder.environment = {
+  #
+  # These credentials live on coder-init-admin.service (the bootstrap service),
+  # NOT coder.service, so they stay out of the long-running server's environment.
+  systemd.services.coder-init-admin.environment = {
     CODER_ADMIN_EMAIL    = "you@example.com";  # change this
     CODER_ADMIN_USERNAME = "admin";
     CODER_ADMIN_PASSWORD = "changeme";         # change this
-
-    # ── GitHub OAuth (optional) ──────────────────────────────────────────────
-    # Leave this block commented out to use the built-in Coder GitHub App.
-    # CODER_OAUTH2_GITHUB_CLIENT_ID              = "";
-    # CODER_OAUTH2_GITHUB_CLIENT_SECRET          = "";
-    # CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS          = "true";
-    # CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = "false";
-    # CODER_OAUTH2_GITHUB_ALLOW_EVERYONE         = "true";
-    # CODER_OAUTH2_GITHUB_ALLOWED_ORGS           = "my-org";
   };
+
+  # ── GitHub OAuth (optional) ────────────────────────────────────────────────
+  # Read by the long-running coder.service. Leave this block commented out to
+  # use the built-in Coder GitHub App.
+  # systemd.services.coder.environment = {
+  #   CODER_OAUTH2_GITHUB_CLIENT_ID              = "";
+  #   CODER_OAUTH2_GITHUB_CLIENT_SECRET          = "";
+  #   CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS          = "true";
+  #   CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = "false";
+  #   CODER_OAUTH2_GITHUB_ALLOW_EVERYONE         = "true";
+  #   CODER_OAUTH2_GITHUB_ALLOWED_ORGS           = "my-org";
+  # };
 
   # ── Desktop / OS login account ─────────────────────────────────────────────
   # SDDM / SSH login. Change with `passwd ${nixosUsername}` after first boot;
