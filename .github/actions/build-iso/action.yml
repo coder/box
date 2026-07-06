@@ -1,0 +1,95 @@
+# Build one coder/box image kind for the runner's native architecture.
+#
+# Shared by the test and release workflows so both build images the exact same
+# way. Nix is already on the host (see the setup-nix action), so make/git
+# (preinstalled on the runner) build straight into the host /nix/store — no
+# container. A full build runs `make <target>/iso`, then dereferences the image
+# and its .sha256 sidecar (colocated in out/<target>-iso/iso) into a real dir so
+# a single upload carries both; a drv-only build just instantiates the
+# derivation (`make <target>/drv`, cheap validation, no image). Bare target →
+# native currentSystem (callers pin the matching native runner).
+name: Build coder/box ISO
+description: >-
+  Build a coder/box image kind (installer or appliance) as a full ISO or, for
+  cheap validation, just instantiate its derivation.
+
+inputs:
+  target:
+    description: Image kind to build — "installer" or "appliance".
+    required: true
+  full:
+    description: >-
+      "true" builds the full ISO (make <target>/iso) and dereferences the image
+      + its .sha256 sidecar into the output dir; "false" only instantiates the
+      derivation (make <target>/drv — cheap validation, no image).
+    required: false
+    default: "true"
+  iso-compression:
+    description: >-
+      Optional squashfs compression override passed as ISO_COMPRESSION (e.g.
+      "zstd -Xcompression-level 3" to trade ISO size for build speed on
+      verification builds). Empty keeps the nixpkgs default so shipped ISOs stay
+      small.
+    required: false
+    default: ""
+  pr-title:
+    description: >-
+      PR title woven into the pretty version name (coderBox.prTitle). Empty for
+      tag/main builds so they keep their plain names.
+    required: false
+    default: ""
+  pr-number:
+    description: PR number woven into the pretty version name (coderBox.prNumber).
+    required: false
+    default: ""
+  branch:
+    description: >-
+      Source branch for the boot-screen "<short-sha>@<branch>" stamp
+      (github.head_ref). Empty falls back to the Makefile's local branch name.
+    required: false
+    default: ""
+  dist:
+    description: >-
+      Directory to collect built ISO(s) + .sha256 sidecars into. Empty creates a
+      fresh mktemp dir; pass an existing dir to accumulate multiple kinds into
+      one place (the test workflow builds installer + appliance side by side).
+    required: false
+    default: ""
+
+outputs:
+  dist:
+    description: >-
+      Absolute path to the dir holding the built ISO(s) + .sha256 sidecars (no
+      ISO added for a drv-only build).
+    value: ${{ steps.build.outputs.dist }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build image
+      id: build
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        FULL: ${{ inputs.full }}
+        DIST: ${{ inputs.dist }}
+        # Read by the Makefile under --impure for the image's pretty version
+        # name / boot-screen label. Set through env (not inlined into the script)
+        # so an arbitrary PR title can't break the shell; empty on non-PR events.
+        ISO_COMPRESSION: ${{ inputs.iso-compression }}
+        CODER_BOX_PR_TITLE: ${{ inputs.pr-title }}
+        CODER_BOX_PR_NUMBER: ${{ inputs.pr-number }}
+        CODER_BOX_BRANCH: ${{ inputs.branch }}
+      run: |
+        # Reuse the caller-provided dist dir or make a fresh one, then expose it
+        # so later workflow steps (size recording, artifact upload) can find the
+        # built image(s).
+        dist="${DIST:-$(mktemp -d)}"
+        echo "dist=$dist" >>"$GITHUB_OUTPUT"
+        if [ "$FULL" = "true" ]; then
+          make "$TARGET/iso"
+          cp -L "out/$TARGET-iso/iso"/* "$dist/"
+        else
+          make "$TARGET/drv"
+        fi
+        ls -lh "$dist"

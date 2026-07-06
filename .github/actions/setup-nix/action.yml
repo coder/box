@@ -1,0 +1,43 @@
+# Install Nix natively on the runner and cache the /nix/store across runs.
+#
+# Shared by the test and release workflows so every job sets Nix up the exact
+# same way. Nix is installed on the host (not the `nixos/nix` container — that
+# container lacks a standard glibc loader, so GitHub's bundled Node couldn't run
+# there and JS actions failed); installing on the host avoids that and, crucially,
+# lets us cache the /nix/store (nix-community/cache-nix-action, backed by the
+# GitHub Actions cache). Each arch runs on its own native runner, so bare
+# `make <target>` resolves to the runner's native `builtins.currentSystem`.
+name: Set up Nix
+description: >-
+  Install Nix natively on the runner and cache the /nix/store so bare
+  `make <target>` builds straight into the host store.
+
+inputs:
+  cache-key-prefix:
+    description: >-
+      Prefix for the /nix/store cache key (e.g. "nix-images" for image builds,
+      "nix-flake" for the cheap flake-check job) so unrelated jobs don't share a
+      cache entry.
+    required: false
+    default: nix-images
+  gc-max-store-size:
+    description: >-
+      Cap on the saved /nix/store size (cache-nix-action gc-max-store-size-linux)
+      so a run can't blow past the repo's GitHub Actions cache budget (10G total).
+    required: false
+    default: 8G
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@main
+
+    - name: Cache Nix store
+      uses: nix-community/cache-nix-action@v6
+      with:
+        # Key on the lockfile + all Nix sources; restore the most recent
+        # arch-matching cache otherwise.
+        primary-key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
+        restore-prefixes-first-match: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ runner.arch }}-
+        gc-max-store-size-linux: ${{ inputs.gc-max-store-size }}

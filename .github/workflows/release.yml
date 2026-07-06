@@ -80,34 +80,19 @@ jobs:
           # to release an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+      # Install Nix natively + cache the /nix/store (shared with the test
+      # workflow so releases build the exact same way).
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
 
-      - name: Cache Nix store
-        uses: nix-community/cache-nix-action@v6
-        with:
-          # ISO closures are large; cap the saved store so a build can't blow
-          # past the repo's GitHub Actions cache budget (10G total).
-          primary-key: nix-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
-          restore-prefixes-first-match: nix-images-${{ runner.os }}-${{ runner.arch }}-
-          gc-max-store-size-linux: 8G
-
+      # Build the full ISO via the shared action. No ISO_COMPRESSION / PR
+      # stamping inputs: releases keep the slow nixpkgs default (small shipped
+      # ISOs) and their plain version names.
       - name: Build ISO
         id: build
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          # Nix is on the host, so make/git (preinstalled on the runner) build
-          # straight into the host /nix/store. The ISO target puts the image and
-          # its .sha256 sidecar together in out/<target>-iso/iso, so a single
-          # cp -L dereferences both into a real mktemp dir for upload (release
-          # consumers can verify the download). Bare target → native
-          # currentSystem (matrix pins the matching native runner).
-          dist="$(mktemp -d)"
-          echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          make "$TARGET/iso"
-          cp -L "out/$TARGET-iso/iso"/* "$dist/"
-          ls -lh "$dist"
+        uses: ./.github/actions/build-iso
+        with:
+          target: ${{ matrix.target }}
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v6
