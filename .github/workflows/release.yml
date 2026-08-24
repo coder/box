@@ -82,6 +82,12 @@ jobs:
           # Empty for tag push (checks out the tag); honored for manual dispatch
           # to release an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
+          # This working tree is baked into the image at /etc/nixos-repo (via
+          # box-turnkey.nix's self.outPath). Don't persist the job token as an
+          # http.*.extraheader in .git/config, or the dead token ships in the
+          # image and makes `git pull` on installed boxes prompt for creds. The
+          # repo is public, so `git pull` on the box works anonymously.
+          persist-credentials: false
 
       # Install Nix natively + cache the /nix/store (shared with the test
       # workflow so releases build the exact same way).

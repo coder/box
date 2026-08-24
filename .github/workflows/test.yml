@@ -170,6 +170,14 @@ jobs:
           # Empty for push/PR (checks out the event ref); honored for manual
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
+          # This working tree is baked into the image at /etc/nixos-repo (via
+          # box-turnkey.nix's self.outPath). actions/checkout defaults to
+          # persisting the job's short-lived token as an http.*.extraheader in
+          # .git/config; baked in, that dead token makes `git pull` on installed
+          # boxes prompt for credentials. Don't persist it (the repo is public;
+          # the initial fetch still authenticates, and `git pull` on the box
+          # works anonymously).
+          persist-credentials: false
 
       # Install Nix natively + cache the /nix/store (shared with the release
       # workflow so both build images the exact same way).
