@@ -387,6 +387,11 @@ in
       gnomeExtensions.no-overview
     ];
 
+    # Use Lix (a drop-in Nix reimplementation) as the system Nix distribution
+    # instead of upstream CppNix. pkgs.lix comes from the pinned nixpkgs above,
+    # so this swaps the daemon, nixos-rebuild, and the `nix` CLI without adding
+    # a flake input or a from-source build.
+    nix.package = pkgs.lix;
     nix.settings.experimental-features = [
       "nix-command"
       "flakes"
