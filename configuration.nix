@@ -2,13 +2,14 @@
 # Per-host modules (hardware-configuration.nix or facter.json, optional disko,
 # local.nix) live under ./hosts/<host>/; everything else lives here.
 #
-# Apply: sudo nixos-rebuild switch (packages/services only)
-#        sudo nixos-rebuild boot + sudo reboot (anything touching desktop/display stack)
+# Apply: sudo nixos-rebuild switch --flake path:/etc/nixos-repo (packages/services only)
+#        sudo nixos-rebuild boot --flake path:/etc/nixos-repo + sudo reboot (desktop/display stack)
 #
 # First-time setup and the live-USB install walkthrough are in ./README.md.
 # This file expects a flake (./flake.nix) to assemble the configuration via
-# nixosConfigurations.<hostname>, so `nixos-rebuild switch` should resolve
-# through /etc/nixos/flake.nix (symlinked to /etc/nixos-repo/flake.nix).
+# nixosConfigurations.<hostname>. Rebuilds use a `path:` flake ref
+# (path:/etc/nixos-repo) rather than the plain git flake so the gitignored
+# per-host dir (hosts/<host>/, holding secrets) is visible to Nix.
 #
 # Per-host local.nix lives at hosts/<host>/local.nix and is gitignored.
 
@@ -810,7 +811,7 @@ in
           # 10. Re-run nixos-rebuild switch to push templates via coder-template-sync
           echo "--- running nixos-rebuild switch (template sync)"
           /run/current-system/sw/bin/nixos-rebuild switch \
-            --flake /etc/nixos-repo 2>&1 \
+            --flake path:/etc/nixos-repo 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[coder-reset] /'
 
           echo ""

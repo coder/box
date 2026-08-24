@@ -8,7 +8,7 @@ Reference for AI coding agents and humans working on this repo.
 |---|---|
 | SSH | `ssh -i ~/.ssh/id_ed25519 coderbox@<TAILSCALE_IP>` |
 | Repo path | `/etc/nixos-repo/` (a Nix flake; `nixosConfigurations.<hostname>`) |
-| Git ops | `sudo git -C /etc/nixos-repo <command>` |
+| Git ops | `git -C /etc/nixos-repo <command>` (repo is `root:wheel`, wheel-writable) |
 | Coder URL | `http://coder-thinkcentre.local:3000` |
 | Coder token | stored in `/etc/coder/session-token` |
 | Coder binary | `coder` (in PATH via NixOS; resolves from nix store) |
@@ -27,16 +27,19 @@ sudo k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml ...
 
 ```sh
 # Service, package, or config changes — safe, non-destructive:
-cd /etc/nixos-repo && sudo nixos-rebuild switch --flake /etc/nixos-repo
+cd /etc/nixos-repo && sudo nixos-rebuild switch --flake path:/etc/nixos-repo
 
 # Desktop stack (GNOME, GDM, Wayland) — must reboot:
-cd /etc/nixos-repo && sudo nixos-rebuild boot --flake /etc/nixos-repo && sudo reboot
+cd /etc/nixos-repo && sudo nixos-rebuild boot --flake path:/etc/nixos-repo && sudo reboot
 ```
 
 The repo is baked onto the box at **`/etc/nixos-repo`** (the canonical flake;
 `nixosConfigurations.<hostname>`, auto-selected by the running hostname). Edit
-files there, then rebuild. Always pass `--flake /etc/nixos-repo` (or `cd` into
-it and use `--flake .`) — see the `/etc/nixos` pitfall below.
+files there, then rebuild. Always pass `--flake path:/etc/nixos-repo`. The
+per-host dir (`hosts/<host>/`) is gitignored and untracked, so a `path:` flake
+ref is required — a plain git flake (`--flake /etc/nixos-repo` or `--flake .`)
+only sees tracked files and would not find the host. See the `/etc/nixos`
+pitfall below.
 
 `nixos-rebuild switch` triggers the `coder-template-sync` activation script, which runs `terraform apply` in `coderd/` and pushes any template changes to Coder. The `/etc/coder/session-token` it needs is populated automatically by `coder-init-admin.service` on first boot, so this just works post-install.
 
@@ -73,13 +76,14 @@ if something is off. Run `make fmt` to fix formatting locally.
 
 ## Git Workflow
 
-All files in `/etc/nixos-repo/` are root-owned. Use `sudo git`:
+All files in `/etc/nixos-repo/` are owned `root:wheel` and group-writable, so
+wheel users run git without sudo:
 
 ```sh
 cd /etc/nixos-repo
-sudo git status
-sudo git add -p
-sudo git commit -m "feat: describe your change"
+git status
+git add -p
+git commit -m "feat: describe your change"
 # Don't push unless explicitly asked
 ```
 
@@ -122,7 +126,7 @@ sudo terraform apply \
   -var="coder_url=http://localhost:3000" \
   -var="coder_session_token=$(sudo cat /etc/coder/session-token)" \
   -var="hostname=coder-thinkcentre" \
-  -var="version_name=$(sudo git -C /etc/nixos-repo rev-parse --short HEAD)"
+  -var="version_name=$(git -C /etc/nixos-repo rev-parse --short HEAD)"
 ```
 
 ## nook-android Template
@@ -197,8 +201,8 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 - **Tailscale auth doesn't re-run** — `tailscale-autoauth` has `RemainAfterExit = true`. If you change auth key config, run `sudo systemctl restart tailscale-autoauth`.
 - **Template sync skips**, if `/etc/coder/session-token` is empty, the activation script exits cleanly. The token is auto-populated by `coder-init-admin.service`; if it's missing, check `journalctl -u coder-init-admin`.
 - **`coder` binary path** — the binary is in PATH via NixOS environment; don't hardcode nix store paths in scripts (they change with every package update).
-- **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree: `--flake /etc/nixos-repo` (or `cd /etc/nixos-repo && nixos-rebuild switch --flake .`).
-- **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,install-answers.json,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/install-answers.json hosts/<host>/facter.json`.
+- **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree with a `path:` ref: `--flake path:/etc/nixos-repo`.
+- **Host not found / `does not provide attribute 'nixosConfigurations.<host>'`** — the per-host dir is gitignored and untracked, so a git flake (`--flake /etc/nixos-repo` or `--flake .`) can't see it. Use `--flake path:/etc/nixos-repo`, which copies the tree verbatim (gitignored files included). This is also why nothing intent-adds the host and `git status` stays clean.
 - **ScreenConnect blank screen** — the box now runs GNOME on Wayland (GDM), and GNOME 49 dropped the Xorg session, so there is no X11 desktop to fall back to. ScreenConnect reaches `DISPLAY=:0` through XWayland (see `nixos/screenconnect.nix`) but **cannot screen-capture the Wayland compositor** through it, so the remote view may be black/blank. Capturing the GNOME session needs a Wayland-aware path (PipeWire/portal, e.g. `gnome-remote-desktop`); the X11 agent will connect but not mirror the desktop.
 
 ## Wildcard App Access (TODO)
@@ -212,7 +216,7 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 ## File Layout (agent-relevant paths)
 
 ```
-/etc/nixos-repo/                # repo root (a Nix flake; sudo git required)
+/etc/nixos-repo/                # repo root (a Nix flake; root:wheel, wheel-writable)
   flake.nix                     # entry point: nixosConfigurations.<host> per machine
   flake.lock                    # pinned nixpkgs / disko
   configuration.nix             # shared NixOS config (edit here for services/packages)
