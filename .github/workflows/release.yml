@@ -11,8 +11,11 @@
 # /nix/store cached across runs (nix-community/cache-nix-action). Bare
 # `make <target>` resolves to
 # the runner's native currentSystem; the resulting ISO + its .sha256 sidecar are
-# dereferenced into a host mktemp dir. The release job gathers all ISOs and
-# attaches them (with sha256 checksums) to the release.
+# dereferenced into a host mktemp dir. Each ISO is published as a GitHub Actions
+# artifact (not a release asset: assets are capped at 2 GiB and the ISOs exceed
+# it) and the release body carries a table linking each kind/arch to its
+# artifact. This is a stopgap until the ISOs move to S3, at which point only the
+# upload steps and the iso-table action's links change.
 
 name: Build and release ISO
 
@@ -93,19 +96,31 @@ jobs:
         uses: ./.github/actions/build-iso
         with:
           target: ${{ matrix.target }}
+          system: ${{ matrix.system }}
 
+      # Publish the ISO + its .sha256 sidecar as one artifact per kind (a single
+      # upload-artifact step uploads matched files CONCURRENTLY). Named
+      # coder-box-<target>-<system> so the iso-table renderer can resolve each
+      # kind/arch to its download URL. Kept for the max public-repo retention.
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v6
         with:
           name: coder-box-${{ matrix.target }}-${{ matrix.system }}
-          path: ${{ steps.build.outputs.dist }}/*.iso
+          path: |
+            ${{ steps.build.outputs.dist }}/*.iso
+            ${{ steps.build.outputs.dist }}/*.iso.sha256
+          retention-days: 90
           if-no-files-found: error
 
-      - name: Upload ISO checksum artifact
+      # Tiny size metadata (written by build-iso) the release job renders into
+      # the release-body table. Named per target+system so merge-multiple can't
+      # clash when both kinds share an arch.
+      - name: Upload ISO size metadata
         uses: actions/upload-artifact@v6
         with:
-          name: coder-box-${{ matrix.target }}-${{ matrix.system }}-sha256
-          path: ${{ steps.build.outputs.dist }}/*.iso.sha256
+          name: iso-meta-${{ matrix.target }}-${{ matrix.system }}
+          path: ${{ steps.build.outputs.dist }}/iso-sizes-*.tsv
+          retention-days: 90
           if-no-files-found: error
 
   release:
@@ -114,7 +129,15 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # listWorkflowRunArtifacts (download links) reads the run's artifacts.
+      actions: read
     steps:
+      # Checkout so the local iso-table composite action is available.
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
       - name: Determine release tag
         id: tag
         run: |
@@ -126,23 +149,30 @@ jobs:
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
           echo "Releasing tag: $tag"
 
-      - name: Download built ISOs
+      # Only the tiny size metadata is needed here; the multi-GB ISOs stay as
+      # artifacts and are linked from the release body, never re-downloaded.
+      - name: Download ISO size metadata
         uses: actions/download-artifact@v7
         with:
-          path: dist
+          path: meta
+          pattern: iso-meta-*
           merge-multiple: true
 
-      - name: List release assets
-        run: ls -lhR dist/
+      # Same renderer the test workflow uses for its sticky PR comment; here its
+      # output becomes the release body. 90-day expiry note matches the
+      # artifacts' retention.
+      - name: Render ISO table
+        id: table
+        uses: ./.github/actions/iso-table
+        with:
+          meta-dir: meta
+          expiry-days: "90"
 
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
+          body: ${{ steps.table.outputs.table }}
           generate_release_notes: true
           prerelease: ${{ github.event.inputs.prerelease || false }}
-          files: |
-            dist/*.iso
-            dist/*.iso.sha256
-          fail_on_unmatched_files: true
