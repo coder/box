@@ -136,7 +136,7 @@ services.coder-nixos.podman.enable = true;
 gitignored and must be created manually:
 
 ```sh
-cp /etc/nixos-repo/local.nix.example \
+cp /etc/nixos-repo/installer/bootstrap/local.nix.example \
    /etc/nixos-repo/hosts/$HOSTNAME/local.nix
 
 # Mark it so the flake's builtins.readDir can see it without committing it.
@@ -148,15 +148,15 @@ Edit `hosts/$HOSTNAME/local.nix` and at minimum set:
 ```nix
 services.coder-nixos.lanIp = "192.168.x.x";  # VM's primary IP
 
-systemd.services.coder-init-admin.environment = {
-  CODER_ADMIN_EMAIL    = "you@example.com";
-  CODER_ADMIN_USERNAME = "admin";
-  CODER_ADMIN_PASSWORD = "changeme";
+services.coder-nixos.initialUser = {
+  username = "admin";
+  email    = "you@example.com";
+  password = "changeme";
 };
 ```
 
-These credentials are read by `coder-init-admin.service` on first boot to
-automatically create the admin user and mint a long-lived session token for
+These credentials feed `coder-init-admin.service` on first boot to
+automatically create the initial user and mint a long-lived session token for
 template-sync. **Without this, templates won't be pushed on the first
 `nixos-rebuild switch`.**
 
@@ -200,7 +200,7 @@ Once complete, the tunnel URL is in `/etc/motd`:
 cat /etc/motd
 ```
 
-**Fallback (no local.nix credentials):** If `CODER_ADMIN_EMAIL` was left empty,
+**Fallback (no local.nix credentials):** If `initialUser.email` was left empty,
 `coder-init-admin` is skipped. Complete setup via the first-run wizard instead:
 
 ```sh

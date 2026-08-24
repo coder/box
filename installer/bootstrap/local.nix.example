@@ -1,0 +1,78 @@
+# Per-host overrides for hosts/<host>/local.nix.
+#
+# Usage:
+#   cp installer/bootstrap/local.nix.example hosts/<host-folder>/local.nix
+#   $EDITOR hosts/<host-folder>/local.nix
+#   sudo git add --intent-to-add -f hosts/<host-folder>/local.nix
+#   sudo nixos-rebuild switch
+#
+# install.sh writes the install-time answers (Coder initial user, OS login user,
+# LAN IP) to hosts/<host>/install-answers.json and the generated default.nix
+# applies them. This file is only for optional per-host tweaks and overrides;
+# everything below is commented out by default.
+#
+# The credential options (services.coder-nixos.initialUser / loginUser) are plain
+# NixOS strings, so you can override them here or point them at a secret manager
+# (agenix/sops) instead of keeping plaintext in install-answers.json.
+#
+# Hostname comes from flake.nix's mkHost; override with `lib.mkForce` if needed.
+
+{ ... }:
+
+{
+  # ── LAN IP (optional) ───────────────────────────────────────────────────────
+  # Primary LAN IP so workspace pods reach the Coder server directly (bypasses
+  # mDNS). Leave unset to fall back to http://<hostname>.local:3000.
+  # services.coder-nixos.lanIp = "192.168.x.x";
+
+  # ── Coder initial user (optional override) ──────────────────────────────────
+  # Set at install time from install-answers.json. Override the initial owner's
+  # credentials here, or wire them to a secret. An empty email skips the
+  # bootstrap and leaves the browser first-run wizard to create the user.
+  # services.coder-nixos.initialUser = {
+  #   username = "admin";
+  #   email    = "you@example.com";
+  #   password = "changeme";
+  # };
+
+  # ── OS login user (optional override) ───────────────────────────────────────
+  # Declared by the generated default.nix from install-answers.json. Change the
+  # password with `passwd <user>` after first boot; initialPassword only fires on
+  # user creation.
+  # users.users.coderbox.initialPassword = "changeme";
+
+  # ── GitHub OAuth (optional) ────────────────────────────────────────────────
+  # Read by the long-running coder.service. Leave commented to use the built-in
+  # Coder GitHub App.
+  # systemd.services.coder.environment = {
+  #   CODER_OAUTH2_GITHUB_CLIENT_ID               = "";
+  #   CODER_OAUTH2_GITHUB_CLIENT_SECRET           = "";
+  #   CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS           = "true";
+  #   CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = "false";
+  #   CODER_OAUTH2_GITHUB_ALLOW_EVERYONE          = "true";
+  #   CODER_OAUTH2_GITHUB_ALLOWED_ORGS            = "my-org";
+  # };
+
+  # ── SSH key sync from GitHub ─────────────────────────────────────────────
+  # GitHub usernames whose public keys are fetched on each boot and written to
+  # /etc/ssh/authorized_keys.d/<username>, granting SSH access to the OS login
+  # user. Leave commented to disable.
+  # services.coder-sync-ssh-keys.githubUsers = [ "bpmct" "colleague" ];
+
+  # ── ScreenConnect (optional) ────────────────────────────────────────────────
+  # services.coder-nixos.screenconnect = {
+  #   enable       = true;
+  #   installerUrl = "https://sc.example.com/Bin/ScreenConnect.ClientSetup.sh?e=Access&y=Guest&c=Coder&c=&c=&c=&c=&c=&c=&c=";
+  # };
+
+  # ── k3s + sysbox-runc ──────────────────────────────────────────────────────
+  # Enabled by default in configuration.nix because every shipped template
+  # needs k3s. Uncomment to opt this host out.
+  # services.coder-nixos.sysbox.enable = false;
+
+  # ── Tailscale (optional) ────────────────────────────────────────────────────
+  # services.coder-nixos.tailscale = {
+  #   enable  = true;
+  #   authKey = "tskey-auth-…";
+  # };
+}

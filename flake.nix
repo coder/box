@@ -6,7 +6,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # Declarative disk partitioning. The repo ships a single-disk UEFI
-    # layout under nixos/disko-standard.nix that hosts can import.
+    # layout under installer/bootstrap/disko-standard.nix that hosts can import.
     # install.sh runs `disko --mode disko` then `nixos-install`,
     # which builds the closure directly into /mnt/nix/store on the target
     # (avoids the tmpfs OOM that the `disko-install` one-shot hits on

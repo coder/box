@@ -9,7 +9,7 @@
 #   nix build .#nixosConfigurations._appliance-iso.config.system.build.isoImage
 #
 # Unlike normal install hosts (hosts/<hostname>/), this host does NOT
-# import nixos/disko-standard.nix, hardware-configuration.nix, or facter.json:
+# import installer/bootstrap/disko-standard.nix, hardware-configuration.nix, or facter.json:
 # the appliance root filesystem is the squashfs + tmpfs overlay provided by
 # nixos/_images/appliance/iso.nix. All of the appliance-ISO wiring lives there.
 #

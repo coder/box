@@ -4,7 +4,7 @@
 # auto-discovery), so this host is exposed as `nixosConfigurations._appliance-disk`.
 # Unlike the appliance ISO (hosts/_appliance-iso), this builds a *persistent* disk
 # image (qcow2 or raw) using disko's image builder: it carries the real on-disk
-# GPT layout (1 GB ESP + ZFS root pool from nixos/disko-standard.nix) and state
+# GPT layout (1 GB ESP + ZFS root pool from installer/bootstrap/disko-standard.nix) and state
 # survives reboots, exactly like a machine you ran install.sh on.
 #
 # Build (the format is chosen at build time, see Makefile / README):
@@ -28,7 +28,7 @@
 
 {
   imports = [
-    ../../nixos/disko-standard.nix # 1 GB ESP + ZFS root pool single-disk layout
+    ../../installer/bootstrap/disko-standard.nix # 1 GB ESP + ZFS root pool single-disk layout
     ../../nixos/_images/box-turnkey.nix # shared turn-key config (login + Coder bootstrap)
     ../../nixos/_images/base/disk.nix # bundles each disk image with its .sha256 (diskoImagesDir)
   ]
