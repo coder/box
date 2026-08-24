@@ -20,9 +20,12 @@ NixOS configuration for Coder demo and workshop boxes.
 This repo is a Nix flake. `flake.nix` auto-discovers every subdirectory of
 `./hosts/` that contains a `default.nix` and exposes it as
 `nixosConfigurations.<folder-name>`. For normal install hosts the folder name
-is also the hostname, so `nixos-rebuild switch --flake .` auto-selects the
-right config on the running box. Adding a new host means creating a host
-folder, no flake.nix edit. The installer does this for you.
+is also the hostname, so `nixos-rebuild switch --flake path:/etc/nixos-repo`
+auto-selects the right config on the running box. Adding a new host means
+creating a host folder, no flake.nix edit. The installer does this for you.
+(The per-host dir is gitignored, so the box uses a `path:` flake ref — which
+copies the tree verbatim, gitignored files included — rather than a git flake,
+which would only see tracked files. See [Applying changes](#applying-changes).)
 
 Hosts whose folder name starts with an underscore (`_appliance-iso`,
 `_appliance-disk`, `_installer-iso`) are image builds, not per-machine installs: they
@@ -61,7 +64,7 @@ sudo ./install.sh \
 
 `./install.sh --help` lists everything. `--coder-admin-password-file PATH` and `--nixos-password-file PATH` read passwords from a file so they don't end up in shell history. `--no-reboot` skips the automatic reboot at the end.
 
-The installer generates `hosts/<hostname>/{default.nix,local.nix,install-answers.json,facter.json}`, copies the repo into `/etc/nixos-repo` on the target, and symlinks `/etc/nixos/flake.nix`. After reboot, `nixos-rebuild switch` Just Works. Continue with [After install](#after-install).
+The installer generates `hosts/<hostname>/{default.nix,local.nix,install-answers.json,facter.json}`, copies the repo into `/etc/nixos-repo` on the target (owned `root:wheel` and checked out on `main`, so wheel users can `git pull` / edit it without sudo), and symlinks `/etc/nixos/flake.nix`. Rebuild with `sudo nixos-rebuild switch --flake path:/etc/nixos-repo`. Continue with [After install](#after-install).
 
 > **Different partition layout?** Don't import `installer/bootstrap/disko-standard.nix`; drop your own disko config into the host folder instead. See [disko examples](https://github.com/nix-community/disko/tree/master/example).
 
@@ -196,26 +199,24 @@ boot via `coder-init-admin.service`. After the reboot:
    defaults.
 
 Subsequent edits to `coderd/` templates go out via `coder-template-sync`
-on every `sudo nixos-rebuild switch`.
+on every `sudo nixos-rebuild switch --flake path:/etc/nixos-repo`.
 
 ## Applying changes
 
-```sh
-sudo nixos-rebuild switch                    # most changes
-sudo nixos-rebuild boot && sudo reboot       # changes that touch the desktop stack
+The per-host dir (`hosts/<host>/`) is gitignored and stays untracked, so the
+box uses a `path:` flake ref (a plain git flake would not see it). The repo is
+owned `root:wheel`, so wheel users edit it and `git pull` without sudo.
 
-# Edited hosts/<host>/local.nix, install-answers.json, or facter.json? Re-mark intent-to-add:
-sudo git -C /etc/nixos-repo add --intent-to-add -f \
-  hosts/<host>/local.nix \
-  hosts/<host>/install-answers.json \
-  hosts/<host>/facter.json
+```sh
+sudo nixos-rebuild switch --flake path:/etc/nixos-repo                   # most changes
+sudo nixos-rebuild boot --flake path:/etc/nixos-repo && sudo reboot      # desktop-stack changes
 ```
 
 ## Updating nixpkgs / disko / facter
 
 ```sh
 sudo nix flake update --flake /etc/nixos-repo
-sudo nixos-rebuild switch
+sudo nixos-rebuild switch --flake path:/etc/nixos-repo
 ```
 
 This bumps `flake.lock` to the latest of each input.
@@ -274,7 +275,7 @@ Fully automated, no follow-up steps needed. The service:
 ### Changing the admin password
 
 1. Edit `hosts/<host>/install-answers.json`, update `initialUser.password` (or override `services.coder-nixos.initialUser.password` in `local.nix`).
-2. Run `sudo nixos-rebuild switch` to bake the new password into the service.
+2. Run `sudo nixos-rebuild switch --flake path:/etc/nixos-repo` to bake the new password into the service.
 3. Run `sudo systemctl start coder-reset` to wipe and re-bootstrap with the new password.
 
 > If you need to change the password on a **live** deployment without a full wipe:

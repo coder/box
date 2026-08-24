@@ -695,23 +695,17 @@ if [[ ! -f "$HOST_DIR/facter.json" ]]; then
   echo "  wrote hosts/$HOSTNAME_ARG/facter.json"
 fi
 
-# A git path flake ignores untracked files, so the freshly written host files
-# must be intent-to-added for the flake to see them (local.nix and
-# install-answers.json are gitignored, so force-add them). Only meaningful when
-# REPO_DIR is a git repo; the ISO writable copy may have no .git (a non-git path
-# flake already sees every file), so skip.
-if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git -C "$REPO_DIR" add --intent-to-add -f \
-    "hosts/$HOSTNAME_ARG/default.nix" \
-    "hosts/$HOSTNAME_ARG/facter.json" \
-    "hosts/$HOSTNAME_ARG/install-answers.json" \
-    "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
-fi
+# The host dir (hosts/$HOSTNAME_ARG/) is gitignored and stays untracked — it
+# holds per-box secrets (install-answers.json, local.nix). Every flake command
+# below references the repo as a `path:` flake, which copies the directory
+# verbatim (gitignored files included) instead of using the git tree, so the
+# host is visible without intent-to-add / force-staging and its secrets never
+# enter the git index.
 
 # ── Validate ───────────────────────────────────────────────────────────────
 echo "  validating flake ..."
 nix --extra-experimental-features 'nix-command flakes' \
-  eval "$REPO_DIR#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel.drvPath" \
+  eval "path:$REPO_DIR#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel.drvPath" \
   >/dev/null
 
 # ── Partition + format + mount ─────────────────────────────────────────────
@@ -720,7 +714,7 @@ echo "=== Partitioning $DISK_ARG via disko ==="
 # Use the flake's pinned disko (one nixpkgs source for the whole install).
 nix --extra-experimental-features 'nix-command flakes' \
   run "$REPO_DIR#disko" -- \
-  --mode disko --flake "$REPO_DIR#${HOSTNAME_ARG}"
+  --mode disko --flake "path:$REPO_DIR#${HOSTNAME_ARG}"
 
 mountpoint -q /mnt || {
   echo "disko did not mount /mnt" >&2
@@ -745,8 +739,22 @@ echo "=== Copying repo into /mnt/etc/nixos-repo ==="
 mkdir -p /mnt/etc/nixos-repo
 cp -a "$REPO_DIR/." /mnt/etc/nixos-repo/
 
-# Symlink /etc/nixos/flake.nix so plain `nixos-rebuild switch` finds the
-# config after reboot.
+# Make the repo writable by the login user (wheel group) so they can `git pull`
+# and edit config in place without sudo. Also ensure a `main` branch is checked
+# out and tracking origin, so `git pull` works out of the box: a baked image's
+# .git is a detached, branchless CI checkout, and a fresh live-USB clone is
+# already on main (this is a harmless no-op there).
+chown -R root:wheel /mnt/etc/nixos-repo
+chmod -R g+w /mnt/etc/nixos-repo
+if [[ -d /mnt/etc/nixos-repo/.git ]]; then
+  git -C /mnt/etc/nixos-repo checkout -B main >/dev/null 2>&1 || true
+  git -C /mnt/etc/nixos-repo config branch.main.remote origin
+  git -C /mnt/etc/nixos-repo config branch.main.merge refs/heads/main
+fi
+
+# Symlink /etc/nixos/flake.nix so tooling that looks in /etc/nixos finds the
+# flake. Rebuilds must use `--flake path:/etc/nixos-repo` so the gitignored
+# per-host dir is visible (a plain git flake would not see it).
 mkdir -p /mnt/etc/nixos
 ln -sf /etc/nixos-repo/flake.nix /mnt/etc/nixos/flake.nix
 
@@ -782,7 +790,7 @@ if [[ ${CODER_BOX_FROM_IMAGE:-0} == "1" ]]; then
   SYSTEM_TOPLEVEL=$(nix --extra-experimental-features 'nix-command flakes' \
     build --no-link --print-out-paths \
     --option download-buffer-size 268435456 \
-    "/mnt/etc/nixos-repo#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel")
+    "path:/mnt/etc/nixos-repo#nixosConfigurations.${HOSTNAME_ARG}.config.system.build.toplevel")
   [[ -n $SYSTEM_TOPLEVEL ]] || {
     echo "failed to build system closure" >&2
     exit 1
@@ -802,7 +810,7 @@ else
   echo "=== Running nixos-install ==="
   echo "    (closure builds into /mnt/nix/store; no tmpfs OOM risk)"
   nixos-install \
-    --flake "/mnt/etc/nixos-repo#${HOSTNAME_ARG}" \
+    --flake "path:/mnt/etc/nixos-repo#${HOSTNAME_ARG}" \
     --no-channel-copy \
     --no-root-passwd \
     --option download-buffer-size 268435456
@@ -820,7 +828,7 @@ echo "  http://${HOSTNAME_ARG}.local:3000   (direct LAN access)"
 echo "  the *.try.coder.app URL itself is written to /etc/motd on first boot once coder.service is up"
 echo
 echo "Optional after first login:"
-echo "  - Update the box:  cd /etc/nixos-repo && sudo git pull && sudo nixos-rebuild switch"
+echo "  - Update the box:  cd /etc/nixos-repo && git pull && sudo nixos-rebuild switch --flake path:/etc/nixos-repo"
 echo
 
 if [[ $NO_REBOOT -eq 0 ]]; then

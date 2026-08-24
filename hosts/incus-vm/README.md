@@ -92,10 +92,11 @@ cp /etc/nixos-repo/hosts/incus-vm/incus-vm.nix \
    /etc/nixos-repo/hosts/$HOSTNAME/incus-vm.nix
 
 # For bare-metal — write your own default.nix or copy from another host.
-
-# Stage the files — the flake's builtins.readDir only sees tracked files.
-git -C /etc/nixos-repo add hosts/$HOSTNAME/
 ```
+
+The host dir is gitignored (it holds per-host secrets) and stays untracked.
+Rebuilds below use a `path:` flake ref, which sees gitignored files, so there's
+nothing to `git add`.
 
 > **`/etc/nixos/coder.nix`:** The copied `default.nix` does **not** import this
 > file. It only exists on VMs that are *also* running as a coder-agent workspace
@@ -138,9 +139,6 @@ gitignored and must be created manually:
 ```sh
 cp /etc/nixos-repo/installer/bootstrap/local.nix.example \
    /etc/nixos-repo/hosts/$HOSTNAME/local.nix
-
-# Mark it so the flake's builtins.readDir can see it without committing it.
-git -C /etc/nixos-repo add --intent-to-add -f hosts/$HOSTNAME/local.nix
 ```
 
 Edit `hosts/$HOSTNAME/local.nix` and at minimum set:
@@ -178,7 +176,7 @@ EOF
 ### 6. Apply
 
 ```sh
-nixos-rebuild switch --flake /etc/nixos-repo#$(hostname -s) --impure
+nixos-rebuild switch --flake path:/etc/nixos-repo#$(hostname -s) --impure
 ```
 
 `--impure` is required because `/etc/nixos/incus.nix` lives outside the flake
@@ -214,5 +212,5 @@ Open that URL in a browser, create the admin user, then log in with the CLI:
 CODER_URL=http://localhost:3000 coder login http://localhost:3000
 ```
 
-Once logged in, run `sudo nixos-rebuild switch` again to push templates via
-`template-sync`.
+Once logged in, run `sudo nixos-rebuild switch --flake path:/etc/nixos-repo#$(hostname -s) --impure`
+again to push templates via `template-sync`.
