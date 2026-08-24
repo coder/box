@@ -214,7 +214,7 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 ```
 /etc/nixos-repo/                # repo root (a Nix flake; sudo git required)
   flake.nix                     # entry point: nixosConfigurations.<host> per machine
-  flake.lock                    # pinned nixpkgs / disko / nixos-facter-modules
+  flake.lock                    # pinned nixpkgs / disko
   configuration.nix             # shared NixOS config (edit here for services/packages)
   local.nix.example             # template for hosts/<host>/local.nix
   nixos/
