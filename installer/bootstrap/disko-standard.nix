@@ -20,7 +20,7 @@
 # device path if needed (the default is /dev/nvme0n1, the current demo box
 # is NVMe-only):
 #
-#   imports = [ ../../nixos/disko-standard.nix ];
+#   imports = [ ../../installer/bootstrap/disko-standard.nix ];
 #   disko.devices.disk.main.device = "/dev/sda";   # SATA example
 #
 # install.sh handles the format + install on a fresh box by running

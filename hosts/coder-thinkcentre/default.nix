@@ -8,7 +8,7 @@
 # commit the result.
 #
 # Disk layout: this host stays on UUID-based mounts from hardware-configuration.nix.
-# It does NOT import nixos/disko-standard.nix because doing so would conflict
+# It does NOT import installer/bootstrap/disko-standard.nix because doing so would conflict
 # with the existing fileSystems entries. Fresh installs of new hosts use
 # disko-standard.nix and skip hardware-configuration.nix entirely.
 

@@ -6,11 +6,12 @@
 #   - nixos/_images/installer/iso.nix   (installer ISO: hosts/_installer-iso)
 #   - hosts/_appliance-disk/             (persistent disk image: qcow2 / raw)
 #
-# On real installs these settings come from install.sh + the gitignored
-# hosts/<host>/local.nix it generates. The image flavours have no install step,
-# so this module supplies the same turn-key defaults (same values the installer
-# defaults to). Change them before handing an image to anyone untrusted, or
-# override per-image via hosts/<host>/local.nix.
+# On real installs these settings come from install.sh via the gitignored
+# hosts/<host>/install-answers.json (and hosts/<host>/local.nix) it generates.
+# The image flavours have no install step, so this module supplies the same
+# turn-key defaults (same values the installer defaults to). Change them before
+# handing an image to anyone untrusted, or override per-image via
+# hosts/<host>/local.nix.
 
 {
   config,
@@ -233,16 +234,15 @@ in
       initialPassword = "PleaseChangeMe1234";
     };
 
-    # coder-init-admin.service reads CODER_ADMIN_* from its own service
-    # environment and creates a local admin on first boot, then mints a session
-    # token and deploys the templates from /etc/nixos-repo/coderd. With these set
-    # the Coder instance is ready to use immediately. These admin credentials are
-    # only needed by the bootstrap service, so they are kept off the long-running
-    # coder.service environment.
-    systemd.services.coder-init-admin.environment = {
-      CODER_ADMIN_EMAIL = "admin@coder.com";
-      CODER_ADMIN_USERNAME = "admin";
-      CODER_ADMIN_PASSWORD = "PleaseChangeMe1234";
+    # coder-init-admin.service reads services.coder-nixos.initialUser and creates
+    # the Coder owner on first boot, then mints a session token and deploys the
+    # templates from /etc/nixos-repo/coderd. With these set the Coder instance is
+    # ready to use immediately. The credentials are wired onto the bootstrap
+    # service internally, so they stay off the long-running coder.service.
+    services.coder-nixos.initialUser = {
+      username = "admin";
+      email = "admin@coder.com";
+      password = "PleaseChangeMe1234";
     };
 
   }; # end config
