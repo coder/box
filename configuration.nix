@@ -857,13 +857,18 @@ in
             set -euo pipefail
             CODER_LOCAL="http://localhost:${toString coderPort}"
 
-            # Seed the access-URL file with the local URL so a terminal opened
-            # before the tunnel is up still shows a reachable URL; it is upgraded
-            # to "<tunnel> (<local>)" once the tunnel URL is known below. Writing
-            # it here also overwrites any stale value from a previous run.
-            # Best-effort so a /tmp write can't abort the service under set -e.
-            ${pkgs.coreutils}/bin/printf '%s\n' "$CODER_LOCAL" > /tmp/coder-access-url \
-              && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
+            # write_accessUrl <text>: publish <text> to the file the login banner
+            # reads (see environment.interactiveShellInit below). Best-effort so
+            # a /tmp write can't abort the service under set -e.
+            write_accessUrl() {
+              ${pkgs.coreutils}/bin/printf '%s\n' "$1" > /tmp/coder-access-url \
+                && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
+            }
+
+            # Seed with the local URL so a terminal opened before the tunnel is
+            # up still shows a reachable URL; upgraded to "<tunnel> (<local>)"
+            # below. This also overwrites any stale value from a previous run.
+            write_accessUrl "$CODER_LOCAL"
 
             # Wait until the Coder API is up
             echo "coder-redirect: waiting for Coder API..."
@@ -894,11 +899,9 @@ in
 
             export CODER_TUNNEL_URL="$TUNNEL_URL"
 
-            # Upgrade the file to "<access URL> (<local URL>)" now that the
-            # tunnel URL is known, so terminals show both on login (see
-            # environment.interactiveShellInit below). Best-effort so a /tmp
-            # write failure can't take down the redirect under set -e.
-            ${pkgs.coreutils}/bin/printf '%s (%s)\n' "$TUNNEL_URL" "$CODER_LOCAL" > /tmp/coder-access-url || true
+            # Upgrade to "<access URL> (<local URL>)" now that the tunnel URL is
+            # known, so terminals show both on login.
+            write_accessUrl "$TUNNEL_URL ($CODER_LOCAL)"
 
             exec ${pkgs.python3}/bin/python3 ${redirectPy}
           '';
