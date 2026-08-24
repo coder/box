@@ -115,8 +115,9 @@ image + checksum together. The build prints each checksum when it finishes.
 The turn-key login + Coder admin bootstrap shared by all image flavours live in
 [`nixos/_images/box-turnkey.nix`](nixos/_images/box-turnkey.nix): autologin to the `coderbox`
 desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
-`http://<hostname>.local:3000` (or the `*.try.coder.app` tunnel URL in
-`/etc/motd`). Change these before sharing an image by dropping a gitignored
+`http://<hostname>.local:3000` (the `*.try.coder.app` tunnel URL is printed in
+any terminal on login and cached at `/tmp/coder-access-url`). Change these
+before sharing an image by dropping a gitignored
 `hosts/<host>/local.nix` (same shape as `installer/bootstrap/local.nix.example`).
 
 ### Appliance ISO (`_appliance-iso`)
@@ -187,9 +188,9 @@ The installer auto-creates the admin user, mints a long-lived API token to
 `/etc/coder/session-token`, and deploys the workspace templates on first
 boot via `coder-init-admin.service`. After the reboot:
 
-1. Find the box at `http://<your-hostname>.local:3000`, or look up the
-   `*.try.coder.app` tunnel URL in `/etc/motd` on the box (also tailed to
-   the console on each SSH login).
+1. Find the box at `http://<your-hostname>.local:3000`, or read the
+   `*.try.coder.app` tunnel URL from the login banner printed in any terminal
+   or SSH session (cached at `/tmp/coder-access-url`).
 2. Log in with the Coder admin email and password set at install time
    (defaults: `admin@coder.com` / `PleaseChangeMe1234`).
 3. Change the admin password from the user settings page if you used the
@@ -309,6 +310,6 @@ Fully automated, no follow-up steps needed. The service:
 
 - `hosts/<host>/local.nix` is gitignored. Never commit secrets or machine-specific overrides.
 - The `coderd/` Terraform state is stored in `/var/lib/coder/template-sync/` on the box, not in the repo.
-- `CODER_ACCESS_URL` is intentionally unset; Coder auto-creates a `*.try.coder.app` tunnel on startup. `http://<hostname>.local` (port 80) redirects to the live tunnel URL via `coder-redirect.service`, which also writes the URL to `/etc/motd` so it shows on every console and SSH login.
+- `CODER_ACCESS_URL` is intentionally unset; Coder auto-creates a `*.try.coder.app` tunnel on startup. `http://<hostname>.local` (port 80) redirects to the live tunnel URL via `coder-redirect.service`, which also caches the URL at `/tmp/coder-access-url` so a login banner can print it in every terminal and SSH session.
 - The `coder` user (uid 991) runs Coder server and rootless Podman. UID is pinned; do not change.
 - Workspace pods resolve `<hostname>.local` via a `hostAliases` entry pointing to the LAN IP (set via `services.coder-nixos.lanIp` in the host's `local.nix`).

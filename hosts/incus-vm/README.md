@@ -194,10 +194,11 @@ creates the admin user, mints a long-lived session token to
 journalctl -u coder-init-admin -f
 ```
 
-Once complete, the tunnel URL is in `/etc/motd`:
+Once complete, the tunnel URL is printed in any terminal on login and cached
+at `/tmp/coder-access-url`:
 
 ```sh
-cat /etc/motd
+cat /tmp/coder-access-url
 ```
 
 **Fallback (no local.nix credentials):** If `initialUser.email` was left empty,

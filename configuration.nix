@@ -29,6 +29,11 @@ let
   # NixOS won't change an existing user's UID live, so this must stay 991.
   coderUid = 991;
 
+  # Port the Coder server listens on. Single source of truth: it sets
+  # CODER_HTTP_ADDRESS below and every in-box URL that targets the server
+  # (coder-redirect, bootstrap, reset, template sync, reaper, logstream).
+  coderPort = 3000;
+
   # .terraformrc pointing terraform at the locally-packaged coderd provider.
   # No network access needed during `terraform init`.
   terraformrc = pkgs.writeText "terraformrc-coderd" ''
@@ -543,7 +548,7 @@ in
       wants = [ "user@${toString coderUid}.service" ]; # non-fatal if user session is delayed
 
       environment = {
-        CODER_HTTP_ADDRESS = "0.0.0.0:3000";
+        CODER_HTTP_ADDRESS = "0.0.0.0:${toString coderPort}";
         CODER_MAX_TOKEN_LIFETIME = "8760h"; # allow year-long tokens (e.g. nixos-sync)
         CODER_MAX_ADMIN_TOKEN_LIFETIME = "8760h";
         # CODER_ACCESS_URL not set → Coder auto-creates a *.try.coder.app tunnel URL
@@ -555,7 +560,10 @@ in
           let
             inherit (config.services.coder-nixos) lanIp;
           in
-          if lanIp != "" then "http://${lanIp}:3000" else "http://${config.networking.hostName}.local:3000";
+          if lanIp != "" then
+            "http://${lanIp}:${toString coderPort}"
+          else
+            "http://${config.networking.hostName}.local:${toString coderPort}";
         CODER_PG_CONNECTION_URL = "postgres:///coder?host=/run/postgresql&user=coder&sslmode=disable";
         CODER_DATA_DIR = "/var/lib/coder";
         # Point the Terraform Docker provider at the rootless Podman socket.
@@ -614,7 +622,7 @@ in
 
           if [ -z "''${INITIAL_USER_EMAIL:-}" ]; then
             echo "INITIAL_USER_EMAIL not set, skipping bootstrap."
-            echo "Complete the first-run wizard at http://$(${pkgs.nettools}/bin/hostname -s).local:3000"
+            echo "Complete the first-run wizard at http://$(${pkgs.nettools}/bin/hostname -s).local:${toString coderPort}"
             exit 0
           fi
 
@@ -624,7 +632,7 @@ in
           # means the DB schema and coder role exist.
           echo "Waiting for coder API..."
           for i in $(seq 1 60); do
-            if ${pkgs.curl}/bin/curl -sf http://localhost:3000/api/v2/buildinfo > /dev/null 2>&1; then
+            if ${pkgs.curl}/bin/curl -sf http://localhost:${toString coderPort}/api/v2/buildinfo > /dev/null 2>&1; then
               echo "coder API ready after $((i * 2))s."
               break
             fi
@@ -654,13 +662,13 @@ in
             echo "Session token already exists."
           else
             echo "Logging in as admin to mint a long-lived token..."
-            SESSION=$(${pkgs.curl}/bin/curl -sf -X POST http://localhost:3000/api/v2/users/login \
+            SESSION=$(${pkgs.curl}/bin/curl -sf -X POST http://localhost:${toString coderPort}/api/v2/users/login \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"$INITIAL_USER_EMAIL\",\"password\":\"$INITIAL_USER_PASSWORD\"}" \
               | ${pkgs.jq}/bin/jq -r '.session_token')
             [ -n "$SESSION" ] && [ "$SESSION" != "null" ] \
               || { echo "Admin login failed." >&2; exit 1; }
-            LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION" \
+            LONG_TOKEN=$(CODER_URL=http://localhost:${toString coderPort} CODER_SESSION_TOKEN="$SESSION" \
               ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
             [ -n "$LONG_TOKEN" ] \
               || { echo "Token mint failed." >&2; exit 1; }
@@ -702,7 +710,7 @@ in
             ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" init -no-color 2>&1 \
               | ${pkgs.gnused}/bin/sed 's/^/[template-deploy] /'
             ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" apply -auto-approve -no-color \
-              -var="coder_url=http://localhost:3000" \
+              -var="coder_url=http://localhost:${toString coderPort}" \
               -var="coder_session_token=$(cat "$token_file")" \
               -var="hostname=${config.networking.hostName}" \
               -var="version_name=$COMMIT" \
@@ -775,7 +783,7 @@ in
           echo "--- starting coder.service"
           ${pkgs.systemd}/bin/systemctl start coder.service
           echo "--- waiting for Coder API..."
-          until ${pkgs.curl}/bin/curl -sf http://localhost:3000/api/v2/buildinfo > /dev/null 2>&1; do
+          until ${pkgs.curl}/bin/curl -sf http://localhost:${toString coderPort}/api/v2/buildinfo > /dev/null 2>&1; do
             sleep 3
           done
 
@@ -786,11 +794,11 @@ in
           # 8. Mint a fresh long-lived session token using the initial user's creds
           echo "--- minting session token"
           SESSION=$(${pkgs.curl}/bin/curl -sf \
-            -X POST http://localhost:3000/api/v2/users/login \
+            -X POST http://localhost:${toString coderPort}/api/v2/users/login \
             -H 'Content-Type: application/json' \
             -d "{\"email\":\"''${INITIAL_USER_EMAIL}\",\"password\":\"''${INITIAL_USER_PASSWORD}\"}" \
             | ${pkgs.jq}/bin/jq -r '.session_token')
-          LONG_TOKEN=$(CODER_URL=http://localhost:3000 CODER_SESSION_TOKEN="$SESSION" \
+          LONG_TOKEN=$(CODER_URL=http://localhost:${toString coderPort} CODER_SESSION_TOKEN="$SESSION" \
             ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
           echo "$LONG_TOKEN" | ${pkgs.coreutils}/bin/tee /etc/coder/session-token > /dev/null
           echo "--- session token written"
@@ -839,7 +847,7 @@ in
           ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" init -no-color 2>&1 \
             | ${pkgs.gnused}/bin/sed 's/^/[template-sync] /' || true
           ${pkgs.terraform}/bin/terraform -chdir="$CODERD_DIR" apply -auto-approve -no-color \
-            -var="coder_url=http://localhost:3000" \
+            -var="coder_url=http://localhost:${toString coderPort}" \
             -var="coder_session_token=$(cat "$TOKEN_FILE")" \
             -var="hostname=${config.networking.hostName}" \
             -var="version_name=$COMMIT" \
@@ -885,54 +893,73 @@ in
           Restart = "on-failure";
           RestartSec = "10s";
           ExecStart = pkgs.writeShellScript "coder-redirect" ''
-                      set -euo pipefail
-                      CODER_LOCAL="http://localhost:3000"
+            set -euo pipefail
+            CODER_LOCAL="http://localhost:${toString coderPort}"
 
-                      # Wait until the Coder API is up
-                      echo "coder-redirect: waiting for Coder API..."
-                      until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
-                        sleep 5
-                      done
+            # write_accessUrl <text>: publish <text> to the file the login banner
+            # reads (see environment.interactiveShellInit below). Best-effort so
+            # a /tmp write can't abort the service under set -e.
+            write_accessUrl() {
+              ${pkgs.coreutils}/bin/printf '%s\n' "$1" > /tmp/coder-access-url \
+                && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
+            }
 
-                      # Fetch the tunnel URL (may take a moment to establish after startup)
-                      TUNNEL_URL=""
-                      for i in $(seq 1 20); do
-                        TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
-                            -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
-                            "$CODER_LOCAL/api/v2/deployment/config" \
-                          | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
-                        if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-                          echo "coder-redirect: tunnel URL is $TUNNEL_URL"
-                          break
-                        fi
-                        echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
-                        sleep 5
-                      done
+            # Seed with the local URL so a terminal opened before the tunnel is
+            # up still shows a reachable URL; upgraded to "<tunnel> (<local>)"
+            # below. This also overwrites any stale value from a previous run.
+            write_accessUrl "$CODER_LOCAL"
 
-                      if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-                        echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
-                        sleep 30
-                        exit 1
-                      fi
+            # Wait until the Coder API is up
+            echo "coder-redirect: waiting for Coder API..."
+            until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
+              sleep 5
+            done
 
-                      export CODER_TUNNEL_URL="$TUNNEL_URL"
+            # Fetch the tunnel URL (may take a moment to establish after startup)
+            TUNNEL_URL=""
+            for i in $(seq 1 20); do
+              TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
+                  -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
+                  "$CODER_LOCAL/api/v2/deployment/config" \
+                | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
+              if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+                echo "coder-redirect: tunnel URL is $TUNNEL_URL"
+                break
+              fi
+              echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
+              sleep 5
+            done
 
-                      # Surface the tunnel URL on every console / SSH login.
-                      HOSTNAME="$(${pkgs.nettools}/bin/hostname)"
-                      ${pkgs.coreutils}/bin/cat > /etc/motd <<EOF
+            if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+              echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
+              sleep 30
+              exit 1
+            fi
 
-              Coder is running on this box.
+            export CODER_TUNNEL_URL="$TUNNEL_URL"
 
-                Tunnel URL:  $TUNNEL_URL
-                Local:       http://$HOSTNAME.local:3000
-                Redirect:    http://$HOSTNAME.local        (302 → tunnel)
+            # Upgrade to "<access URL> (<local URL>)" now that the tunnel URL is
+            # known, so terminals show both on login.
+            write_accessUrl "$TUNNEL_URL ($CODER_LOCAL)"
 
-            EOF
-
-                      exec ${pkgs.python3}/bin/python3 ${redirectPy}
+            exec ${pkgs.python3}/bin/python3 ${redirectPy}
           '';
         };
       };
+
+    # ── Coder access URL login banner ─────────────────────────────────────────
+    # coder-redirect seeds /tmp/coder-access-url with the local URL and upgrades
+    # it to "<access URL> (<local URL>)" once the tunnel is up. Print it on
+    # interactive shells so both a local terminal and an SSH session show where
+    # to reach Coder — the old /etc/motd only surfaced on PAM logins, never in a
+    # desktop terminal. This only reads the file; it never touches the network.
+    # The exported guard keeps nested shells from reprinting it within a session.
+    environment.interactiveShellInit = ''
+      if [ -z "''${CODER_ACCESS_URL_SHOWN:-}" ] && [ -s /tmp/coder-access-url ]; then
+        export CODER_ACCESS_URL_SHOWN=1
+        printf '\n  Coder is running on this box: %s\n\n' "$(cat /tmp/coder-access-url)"
+      fi
+    '';
 
     # ── Workspace reaper ──────────────────────────────────────────────────────────
     # Deletes workspaces that have been stopped for >= 72 h.
@@ -947,7 +974,7 @@ in
         User = "root";
         ExecStart = pkgs.writeShellScript "coder-workspace-reaper" ''
           set -euo pipefail
-          CODER_LOCAL="http://localhost:3000"
+          CODER_LOCAL="http://localhost:${toString coderPort}"
           TOKEN_FILE="/etc/coder/session-token"
           DELETE_AFTER_HOURS=72
 
@@ -1035,7 +1062,7 @@ in
             coder-logstream-kube/coder-logstream-kube \
             --namespace coder-workspaces \
             --create-namespace \
-            --set url=http://10.42.0.1:3000 \
+            --set url=http://10.42.0.1:${toString coderPort} \
             --set namespaces={coder-workspaces} \
             --atomic --timeout 120s
 
