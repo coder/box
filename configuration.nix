@@ -849,11 +849,13 @@ in
             set -euo pipefail
             CODER_LOCAL="http://localhost:3000"
 
-            # Clear any stale access URL from a previous run; it is
-            # re-published below once the live tunnel URL is known, so
-            # terminals never show a URL from an old boot or redirect.
-            # Best-effort: never let cleanup abort the service under set -e.
-            ${pkgs.coreutils}/bin/rm -f /tmp/coder-access-url || true
+            # Seed the access-URL file with the local URL so a terminal opened
+            # before the tunnel is up still shows a reachable URL; it is upgraded
+            # to "<tunnel> (<local>)" once the tunnel URL is known below. Writing
+            # it here also overwrites any stale value from a previous run.
+            # Best-effort so a /tmp write can't abort the service under set -e.
+            ${pkgs.coreutils}/bin/printf '%s\n' "$CODER_LOCAL" > /tmp/coder-access-url \
+              && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
 
             # Wait until the Coder API is up
             echo "coder-redirect: waiting for Coder API..."
@@ -884,14 +886,11 @@ in
 
             export CODER_TUNNEL_URL="$TUNNEL_URL"
 
-            # Publish the access URL so terminals can show it on login
-            # (see environment.interactiveShellInit below). /tmp is
-            # cleared on boot and we wipe it on every (re)start above,
-            # so a stale URL is never shown; readers only cat this
-            # file, never the network. Best-effort so a /tmp write
-            # failure can't take down the redirect under set -e.
-            ${pkgs.coreutils}/bin/printf '%s\n' "$TUNNEL_URL" > /tmp/coder-access-url \
-              && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
+            # Upgrade the file to "<access URL> (<local URL>)" now that the
+            # tunnel URL is known, so terminals show both on login (see
+            # environment.interactiveShellInit below). Best-effort so a /tmp
+            # write failure can't take down the redirect under set -e.
+            ${pkgs.coreutils}/bin/printf '%s (%s)\n' "$TUNNEL_URL" "$CODER_LOCAL" > /tmp/coder-access-url || true
 
             exec ${pkgs.python3}/bin/python3 ${redirectPy}
           '';
@@ -899,20 +898,16 @@ in
       };
 
     # ── Coder access URL login banner ─────────────────────────────────────────
-    # coder-redirect publishes the live tunnel URL to /tmp/coder-access-url once
-    # it is up (and clears it on restart). Print it on interactive shells so both
-    # a local terminal and an SSH session show where to reach Coder — the old
-    # /etc/motd only surfaced on PAM logins, never in a desktop terminal. This
-    # only reads the file; it never touches the network. The exported guard keeps
-    # nested shells from reprinting it within one session.
+    # coder-redirect seeds /tmp/coder-access-url with the local URL and upgrades
+    # it to "<access URL> (<local URL>)" once the tunnel is up. Print it on
+    # interactive shells so both a local terminal and an SSH session show where
+    # to reach Coder — the old /etc/motd only surfaced on PAM logins, never in a
+    # desktop terminal. This only reads the file; it never touches the network.
+    # The exported guard keeps nested shells from reprinting it within a session.
     environment.interactiveShellInit = ''
       if [ -z "''${CODER_ACCESS_URL_SHOWN:-}" ] && [ -s /tmp/coder-access-url ]; then
         export CODER_ACCESS_URL_SHOWN=1
-        __coder_url="$(cat /tmp/coder-access-url)"
-        __coder_host="$(cat /proc/sys/kernel/hostname)"
-        printf '\n  Coder is running on this box.\n\n    Access URL:  %s\n    Local:       http://%s.local:3000\n    Redirect:    http://%s.local        (302 → Access URL)\n\n' \
-          "$__coder_url" "$__coder_host" "$__coder_host"
-        unset __coder_url __coder_host
+        printf '\n  Coder is running on this box: %s\n\n' "$(cat /tmp/coder-access-url)"
       fi
     '';
 
