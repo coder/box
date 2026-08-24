@@ -55,6 +55,14 @@ inputs:
       one place (the test workflow builds installer + appliance side by side).
     required: false
     default: ""
+  system:
+    description: >-
+      Runner architecture (e.g. "x86_64-linux"). When set on a full build, record
+      each built ISO's exact byte size to iso-sizes-<target>-<system>.tsv in the
+      dist dir (one "system\tfile\tbytes" row per ISO) so the iso-table action
+      can render sizes + download links. Empty skips size recording.
+    required: false
+    default: ""
 
 outputs:
   dist:
@@ -73,6 +81,7 @@ runs:
         TARGET: ${{ inputs.target }}
         FULL: ${{ inputs.full }}
         DIST: ${{ inputs.dist }}
+        SYSTEM: ${{ inputs.system }}
         # Read by the Makefile under --impure for the image's pretty version
         # name / boot-screen label. Set through env (not inlined into the script)
         # so an arbitrary PR title can't break the shell; empty on non-PR events.
@@ -89,6 +98,18 @@ runs:
         if [ "$FULL" = "true" ]; then
           make "$TARGET/iso"
           cp -L "out/$TARGET-iso/iso"/* "$dist/"
+          # Record this kind's ISO size(s) for the iso-table renderer. Named per
+          # target+system so parallel builds sharing a dist (or merged from
+          # separate jobs) never clash. Only the ISO(s) just built are stated,
+          # not everything already staged in dist.
+          if [ -n "$SYSTEM" ]; then
+            meta="$dist/iso-sizes-$TARGET-$SYSTEM.tsv"
+            : >"$meta"
+            for iso in "out/$TARGET-iso/iso"/*.iso; do
+              [ -e "$iso" ] || continue
+              printf '%s\t%s\t%s\n' "$SYSTEM" "$(basename "$iso")" "$(stat -c %s "$iso")" >>"$meta"
+            done
+          fi
         else
           make "$TARGET/drv"
         fi
