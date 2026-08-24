@@ -1,0 +1,41 @@
+{
+  // Renovate config for coder/box. Runs via the Mend-hosted Renovate GitHub App
+  // (installed on the repo); no self-hosted workflow or token needed.
+  //
+  // Split by how risky an update is for a Nix flake:
+  //   * flake.lock refresh (lockFileMaintenance) — stays on the pinned nixpkgs
+  //     release branch (nixos-25.11) and just moves to its latest commit, i.e.
+  //     backported fixes/security patches. Safe, so it runs automatically.
+  //   * nixpkgs release jump (nixos-25.11 -> nixos-26.05) — edits flake.nix and
+  //     crosses a NixOS release, which is the breaking change. Gated behind the
+  //     dependency dashboard so it only opens when clicked, letting it ride with
+  //     a box major release instead of surprising operators.
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+
+  // Enable the nix manager (off by default). Lets Renovate read flake.nix inputs
+  // and maintain flake.lock.
+  nix: {
+    enabled: true,
+  },
+
+  // Weekly whole-lockfile refresh. This is the main win over Dependabot, which
+  // cannot update flake.lock at all. Automerges once CI (fmt/check + lint +
+  // tests) is green, since a within-release refresh is low risk.
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on monday"],
+    automerge: true,
+  },
+
+  packageRules: [
+    {
+      // The only nix input pinned to a release branch in flake.nix. Bumping it
+      // is a breaking release jump, so hold it behind dashboard approval; the
+      // safe within-release patches still arrive via lockFileMaintenance above.
+      matchManagers: ["nix"],
+      matchDepNames: ["nixpkgs"],
+      dependencyDashboardApproval: true,
+    },
+  ],
+}

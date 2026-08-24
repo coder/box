@@ -6,7 +6,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # Declarative disk partitioning. The repo ships a single-disk UEFI
-    # layout under nixos/disko-standard.nix that hosts can import.
+    # layout under installer/bootstrap/disko-standard.nix that hosts can import.
     # install.sh runs `disko --mode disko` then `nixos-install`,
     # which builds the closure directly into /mnt/nix/store on the target
     # (avoids the tmpfs OOM that the `disko-install` one-shot hits on
@@ -15,12 +15,6 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # Hardware detection. `nixos-facter -o facter.json` on the target writes
-    # a JSON hardware report; nixos-facter-modules consumes it to set kernel
-    # modules, microcode, GPU drivers, etc. Replaces hardware-configuration.nix
-    # for common hardware.
-    nixos-facter-modules.url = "github:nix-community/nixos-facter-modules";
 
     # One-stop formatter/linter runner. Drives nixfmt + statix + deadnix (Nix)
     # and shfmt + shellcheck (shell) from a single config (./treefmt.nix), and
@@ -37,7 +31,6 @@
       self,
       nixpkgs,
       disko,
-      nixos-facter-modules,
       treefmt-nix,
       ...
     }@inputs:
@@ -89,7 +82,12 @@
           modules = [
             ./configuration.nix
             disko.nixosModules.disko
-            nixos-facter-modules.nixosModules.facter
+            # nixos-facter's NixOS module ships in nixpkgs (hardware.facter.*)
+            # and is imported automatically, so no separate flake input is
+            # needed. Hosts point hardware.facter.reportPath at their
+            # facter.json to drive kernel modules, microcode, GPU drivers, etc.
+            # `nixos-facter -o facter.json` on the target generates the report;
+            # it replaces hardware-configuration.nix for common hardware.
             (./hosts + "/${hostname}")
           ]
           # Install hosts use their folder name as the hostname so

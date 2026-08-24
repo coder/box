@@ -198,7 +198,7 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 - **Template sync skips**, if `/etc/coder/session-token` is empty, the activation script exits cleanly. The token is auto-populated by `coder-init-admin.service`; if it's missing, check `journalctl -u coder-init-admin`.
 - **`coder` binary path** — the binary is in PATH via NixOS environment; don't hardcode nix store paths in scripts (they change with every package update).
 - **`--flake /etc/nixos` fails** — `/etc/nixos` is a plain dir holding only a `flake.nix` *symlink* into `/etc/nixos-repo`. Nix follows the symlink into the store but can't find the sibling files (configuration.nix, hosts/, nixos/), dying with `path '/nix/store/...-source/etc/nixos-repo/flake.nix' does not exist`. Always rebuild against the real tree: `--flake /etc/nixos-repo` (or `cd /etc/nixos-repo && nixos-rebuild switch --flake .`).
-- **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/facter.json`.
+- **`Git tree '/etc/nixos-repo' is dirty` warning** — harmless. `hosts/<host>/{local.nix,install-answers.json,facter.json}` are gitignored and intent-to-added by the installer, so the tree always reads "dirty". After editing them, re-mark intent-to-add so the flake sees them: `sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix hosts/<host>/install-answers.json hosts/<host>/facter.json`.
 - **ScreenConnect blank screen** — the box now runs GNOME on Wayland (GDM), and GNOME 49 dropped the Xorg session, so there is no X11 desktop to fall back to. ScreenConnect reaches `DISPLAY=:0` through XWayland (see `nixos/screenconnect.nix`) but **cannot screen-capture the Wayland compositor** through it, so the remote view may be black/blank. Capturing the GNOME session needs a Wayland-aware path (PipeWire/portal, e.g. `gnome-remote-desktop`); the X11 agent will connect but not mirror the desktop.
 
 ## Wildcard App Access (TODO)
@@ -214,11 +214,14 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
 ```
 /etc/nixos-repo/                # repo root (a Nix flake; sudo git required)
   flake.nix                     # entry point: nixosConfigurations.<host> per machine
-  flake.lock                    # pinned nixpkgs / disko / nixos-facter-modules
+  flake.lock                    # pinned nixpkgs / disko
   configuration.nix             # shared NixOS config (edit here for services/packages)
-  local.nix.example             # template for hosts/<host>/local.nix
+  install.sh                    # live-USB installer (writes hosts/<host>/{default.nix,local.nix,install-answers.json,facter.json})
+  installer/
+    bootstrap/                  # assets install.sh consumes when generating a new host
+      disko-standard.nix        # shared disko config: UEFI + single-disk layout for new hosts
+      local.nix.example         # template copied to hosts/<host>/local.nix; reads install-answers.json and applies the values
   nixos/
-    disko-standard.nix          # shared disko config: UEFI + single-disk layout for new hosts
     modules/                    # NixOS service modules (services.coder-nixos.*)
       k3s/                      # base single-node k3s server
       podman/                   # k3s + rootless Podman socket runtime

@@ -216,7 +216,7 @@ fi
 # one is the clearest signal you're not running this where it's meant to run.
 # gum only drives the interactive prompts, so it's only required with
 # --interactive.
-REQUIRED_TOOLS=(lsblk openssl git nix nixos-install)
+REQUIRED_TOOLS=(lsblk openssl git jq nix nixos-install)
 [[ $INTERACTIVE -eq 1 ]] && REQUIRED_TOOLS+=(gum)
 for tool in "${REQUIRED_TOOLS[@]}"; do
   command -v "$tool" >/dev/null && continue
@@ -309,16 +309,6 @@ validate_username() {
     echo "username too long (>32 chars): $1" >&2
     return 1
   }
-}
-
-# Escape for a Nix "..." string literal.
-nix_string_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g'
-}
-
-# Escape for the REPLACEMENT in `sed s|...|REPL|`.
-sed_replacement_escape() {
-  printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
 }
 
 list_disks() {
@@ -642,7 +632,8 @@ fi
 mkdir -p "$HOST_DIR"
 
 # default.nix: disko-standard layout, target disk override, conditional
-# local.nix, facter when present.
+# local.nix, facter when present. The coder-nixos options (initial user, OS
+# login user, LAN IP) are applied by local.nix, which reads install-answers.json.
 if [[ ! -f "$HOST_DIR/default.nix" ]]; then
   cat >"$HOST_DIR/default.nix" <<NIX
 # Hardware: ${HARDWARE_DESC_ARG}.
@@ -653,7 +644,7 @@ if [[ ! -f "$HOST_DIR/default.nix" ]]; then
 { lib, ... }:
 
 {
-  imports = [ ../../nixos/disko-standard.nix ]
+  imports = [ ../../installer/bootstrap/disko-standard.nix ]
     ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
 
   # Target disk for disko-standard.
@@ -667,27 +658,31 @@ NIX
   echo "  wrote hosts/$HOSTNAME_ARG/default.nix"
 fi
 
-# local.nix: copy from example, splice creds + LAN IP.
+# local.nix: copied verbatim from the example (no splicing). It reads
+# install-answers.json and applies the values, and holds any user overrides.
 if [[ ! -f "$HOST_DIR/local.nix" ]]; then
-  cp "$REPO_DIR/local.nix.example" "$HOST_DIR/local.nix"
-  # Two-stage escape: Nix string literal, then sed replacement.
-  esc_email=$(sed_replacement_escape "$(nix_string_escape "$ADMIN_EMAIL_ARG")")
-  esc_pw=$(sed_replacement_escape "$(nix_string_escape "$ADMIN_PASSWORD_ARG")")
-  esc_username=$(sed_replacement_escape "$(nix_string_escape "$NIXOS_USERNAME_ARG")")
-  esc_nixos_pw=$(sed_replacement_escape "$(nix_string_escape "$NIXOS_PASSWORD_ARG")")
-  sed -i \
-    -e "s|CODER_ADMIN_EMAIL    = \"you@example.com\";|CODER_ADMIN_EMAIL    = \"${esc_email}\";|" \
-    -e "s|CODER_ADMIN_PASSWORD = \"changeme\";|CODER_ADMIN_PASSWORD = \"${esc_pw}\";|" \
-    -e "s|nixosUsername = \"coderbox\";|nixosUsername = \"${esc_username}\";|" \
-    -e "s|initialPassword = \"changeme\";|initialPassword = \"${esc_nixos_pw}\";|" \
-    "$HOST_DIR/local.nix"
-  if [[ -n $LAN_IP_ARG ]]; then
-    esc_ip=$(sed_replacement_escape "$(nix_string_escape "$LAN_IP_ARG")")
-    sed -i \
-      -e "s|# services.coder-nixos.lanIp = \"192.168.x.x\";|services.coder-nixos.lanIp = \"${esc_ip}\";|" \
-      "$HOST_DIR/local.nix"
-  fi
+  cp "$REPO_DIR/installer/bootstrap/local.nix.example" "$HOST_DIR/local.nix"
   echo "  wrote hosts/$HOSTNAME_ARG/local.nix"
+fi
+
+# install-answers.json: install-time values read by default.nix via fromJSON.
+# jq assembles valid JSON from the raw values, so there's no manual Nix/sed
+# escaping to get wrong. Contains the initial password, so keep it owner-only.
+if [[ ! -f "$HOST_DIR/install-answers.json" ]]; then
+  jq -n \
+    --arg lanIp "$LAN_IP_ARG" \
+    --arg iuUsername "admin" \
+    --arg iuEmail "$ADMIN_EMAIL_ARG" \
+    --arg iuPassword "$ADMIN_PASSWORD_ARG" \
+    --arg luUsername "$NIXOS_USERNAME_ARG" \
+    --arg luPassword "$NIXOS_PASSWORD_ARG" \
+    '{
+      lanIp: $lanIp,
+      initialUser: { username: $iuUsername, email: $iuEmail, password: $iuPassword },
+      loginUser: { username: $luUsername, password: $luPassword }
+    }' >"$HOST_DIR/install-answers.json"
+  chmod 600 "$HOST_DIR/install-answers.json"
+  echo "  wrote hosts/$HOSTNAME_ARG/install-answers.json"
 fi
 
 # facter.json: hardware report. Use the flake's pinned nixos-facter so it
@@ -701,13 +696,15 @@ if [[ ! -f "$HOST_DIR/facter.json" ]]; then
 fi
 
 # A git path flake ignores untracked files, so the freshly written host files
-# must be intent-to-added for the flake to see them (local.nix is gitignored, so
-# force-add it). Only meaningful when REPO_DIR is a git repo; the ISO writable
-# copy may have no .git (a non-git path flake already sees every file), so skip.
+# must be intent-to-added for the flake to see them (local.nix and
+# install-answers.json are gitignored, so force-add them). Only meaningful when
+# REPO_DIR is a git repo; the ISO writable copy may have no .git (a non-git path
+# flake already sees every file), so skip.
 if git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git -C "$REPO_DIR" add --intent-to-add -f \
     "hosts/$HOSTNAME_ARG/default.nix" \
     "hosts/$HOSTNAME_ARG/facter.json" \
+    "hosts/$HOSTNAME_ARG/install-answers.json" \
     "hosts/$HOSTNAME_ARG/local.nix" >/dev/null
 fi
 

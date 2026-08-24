@@ -32,7 +32,7 @@ default `networking.hostName = "coder-box"` (set in `configuration.nix`).
 Two community tools do the heavy lifting:
 
 - [`disko`](https://github.com/nix-community/disko) declares partition layouts in Nix. `nixos/disko-standard.nix` is a single-disk UEFI layout (1 GB EFI / ZFS root pool; no on-disk swap — zram instead). `install.sh` picks the device at install time; the ZFS `networking.hostId` is derived in Nix from the hostname (sha256 substring), so each host gets a distinct id automatically. ZFS gives cheap on-demand snapshots (take one before a risky rebuild and roll back in seconds), zstd compression, and checksum/scrub integrity.
-- [`nixos-facter`](https://github.com/nix-community/nixos-facter) writes a JSON hardware report (`facter.json`) that replaces `hardware-configuration.nix` on new hosts. The `nixos-facter-modules` module reads it to set kernel modules, microcode, GPU drivers, and so on.
+- [`nixos-facter`](https://github.com/nix-community/nixos-facter) writes a JSON hardware report (`facter.json`) that replaces `hardware-configuration.nix` on new hosts. NixOS's built-in facter module (`hardware.facter`, shipped in nixpkgs) reads it to set kernel modules, microcode, GPU drivers, and so on.
 
 ## Installing on a new machine
 
@@ -61,9 +61,9 @@ sudo ./install.sh \
 
 `./install.sh --help` lists everything. `--coder-admin-password-file PATH` and `--nixos-password-file PATH` read passwords from a file so they don't end up in shell history. `--no-reboot` skips the automatic reboot at the end.
 
-The installer generates `hosts/<hostname>/{default.nix,local.nix,facter.json}`, copies the repo into `/etc/nixos-repo` on the target, and symlinks `/etc/nixos/flake.nix`. After reboot, `nixos-rebuild switch` Just Works. Continue with [After install](#after-install).
+The installer generates `hosts/<hostname>/{default.nix,local.nix,install-answers.json,facter.json}`, copies the repo into `/etc/nixos-repo` on the target, and symlinks `/etc/nixos/flake.nix`. After reboot, `nixos-rebuild switch` Just Works. Continue with [After install](#after-install).
 
-> **Different partition layout?** Don't import `nixos/disko-standard.nix`; drop your own disko config into the host folder instead. See [disko examples](https://github.com/nix-community/disko/tree/master/example).
+> **Different partition layout?** Don't import `installer/bootstrap/disko-standard.nix`; drop your own disko config into the host folder instead. See [disko examples](https://github.com/nix-community/disko/tree/master/example).
 
 > **BIOS hardware?** The shared config defaults to `systemd-boot` (UEFI). In your host's `default.nix`:
 > ```nix
@@ -118,7 +118,7 @@ desktop, and admin `admin@coder.com` / `PleaseChangeMe1234`. Coder comes up at
 `http://<hostname>.local:3000` (the `*.try.coder.app` tunnel URL is printed in
 any terminal on login and cached at `/tmp/coder-access-url`). Change these
 before sharing an image by dropping a gitignored
-`hosts/<host>/local.nix` (same shape as `local.nix.example`).
+`hosts/<host>/local.nix` (same shape as `installer/bootstrap/local.nix.example`).
 
 ### Appliance ISO (`_appliance-iso`)
 
@@ -145,7 +145,7 @@ sudo dd if=out/appliance-iso/iso/coder-box-appliance-*.iso of=/dev/sdX bs=4M sta
 > a working build + boot.
 
 Built with [disko](https://github.com/nix-community/disko)'s image builder, so
-it carries the real on-disk GPT layout from `nixos/disko-standard.nix` (1 GB
+it carries the real on-disk GPT layout from `installer/bootstrap/disko-standard.nix` (1 GB
 ESP + ZFS root pool) and **state survives reboots**, exactly like a machine you ran
 `install.sh` on. `hosts/_appliance-disk/default.nix` imports
 `disko-standard.nix` + `box-turnkey.nix`.
@@ -205,9 +205,10 @@ on every `sudo nixos-rebuild switch`.
 sudo nixos-rebuild switch                    # most changes
 sudo nixos-rebuild boot && sudo reboot       # changes that touch the desktop stack
 
-# Edited hosts/<host>/local.nix or facter.json? Re-mark intent-to-add:
+# Edited hosts/<host>/local.nix, install-answers.json, or facter.json? Re-mark intent-to-add:
 sudo git -C /etc/nixos-repo add --intent-to-add -f \
   hosts/<host>/local.nix \
+  hosts/<host>/install-answers.json \
   hosts/<host>/facter.json
 ```
 
@@ -266,14 +267,14 @@ Fully automated, no follow-up steps needed. The service:
 3. Drops and recreates the PostgreSQL database
 4. Wipes `/var/lib/coder` (data dir, sentinel, tokens, Podman volumes)
 5. Starts Coder and waits for the API
-6. Re-bootstraps the admin user from credentials in the host's `local.nix`
+6. Re-bootstraps the initial user from `services.coder-nixos.initialUser` (set in the host's `install-answers.json`)
 7. Mints a fresh long-lived session token → writes to `/etc/coder/session-token`
 8. Restarts `coder-redirect`
 9. Runs `nixos-rebuild switch` to push templates back via `coder-template-sync`
 
 ### Changing the admin password
 
-1. Edit `hosts/<host>/local.nix`, update `CODER_ADMIN_PASSWORD`.
+1. Edit `hosts/<host>/install-answers.json`, update `initialUser.password` (or override `services.coder-nixos.initialUser.password` in `local.nix`).
 2. Run `sudo nixos-rebuild switch` to bake the new password into the service.
 3. Run `sudo systemctl start coder-reset` to wipe and re-bootstrap with the new password.
 

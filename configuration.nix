@@ -89,6 +89,29 @@ in
     description = "LAN IP of this box, used for CODER_AGENT_URL and k8s hostAliases so pods resolve the hostname without relying on mDNS. Set in the host's local.nix. Leave empty to fall back to hostname-based mDNS URL.";
   };
 
+  # ── NixOS option: Coder initial user ───────────────────────────────────────
+  # The owner account coder-init-admin.service creates on first boot. Set from
+  # hosts/<host>/install-answers.json by the generated default.nix, or overridden
+  # in local.nix (optionally wired to a secret via agenix/sops). Plain strings,
+  # not systemd env overrides, so credentials live in one obvious place.
+  options.services.coder-nixos.initialUser = {
+    username = lib.mkOption {
+      type = lib.types.str;
+      default = "admin";
+      description = "Username of the Coder initial (owner) user created on first boot.";
+    };
+    email = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Email of the Coder initial user. Empty skips the bootstrap and leaves the browser first-run wizard to create the user.";
+    };
+    password = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Initial password for the Coder initial user. Change it after first login, or point it at a secret via agenix/sops.";
+    };
+  };
+
   options.services.coder-sync-ssh-keys.githubUsers = lib.mkOption {
     type = lib.types.listOf lib.types.str;
     default = [ ];
@@ -133,7 +156,7 @@ in
     boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
 
     # ── Filesystem: ZFS root ───────────────────────────────────────────────────
-    # The standard single-disk layout (nixos/disko-standard.nix) puts root on a
+    # The standard single-disk layout (installer/bootstrap/disko-standard.nix) puts root on a
     # ZFS pool ("rpool"). The kernel needs the ZFS module available at boot to
     # import it; declare it here so every host that follows the standard layout
     # (and the prebuilt appliance images) boots. Hosts that predate disko and
@@ -157,7 +180,7 @@ in
     services.zfs.trim.enable = lib.mkDefault true;
 
     # ── Swap ──────────────────────────────────────────────────────────────────
-    # No on-disk swap partition (see nixos/disko-standard.nix). Use a
+    # No on-disk swap partition (see installer/bootstrap/disko-standard.nix). Use a
     # compressed in-RAM swap device instead, sized to half of RAM.
     zramSwap.enable = lib.mkDefault true;
 
@@ -309,9 +332,10 @@ in
     services.printing.enable = true;
 
     # ── Users ─────────────────────────────────────────────────────────────────
-    # Desktop / SSH login user is declared per-host in local.nix (template
-    # in local.nix.example); username and password are install-time flags.
-    # The `coder` system user (uid 991) is shared and declared further down.
+    # The desktop / SSH login user is declared per-host in local.nix from the
+    # install-answers.json values (username + initial password chosen at install
+    # time). The `coder` system user (uid 991) is shared and declared further
+    # down.
 
     security.sudo.wheelNeedsPassword = false;
 
@@ -397,6 +421,14 @@ in
       "flakes"
     ];
     nix.settings.download-buffer-size = 268435456; # 256 MiB; quiets the "buffer full" warning on big closure pulls
+
+    # Extra binary cache: pull community-built closures (disko and other
+    # nix-community derivations) instead of building them locally. `extra-`
+    # appends to the defaults, so cache.nixos.org stays in place.
+    nix.settings.extra-substituters = [ "https://nix-community.cachix.org" ];
+    nix.settings.extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
     networking.firewall.enable = false;
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
@@ -496,9 +528,9 @@ in
     # ── Coder server ──────────────────────────────────────────────────────────
     # Base env vars live here. Server secrets (e.g. OAuth) are merged in via
     # systemd.services.coder.environment in hosts/<host>/local.nix; no
-    # EnvironmentFile. Admin bootstrap creds (CODER_ADMIN_*) are NOT set here —
-    # they live on coder-init-admin.service so they stay off the long-running
-    # server's environment.
+    # EnvironmentFile. Initial-user credentials are NOT set here — they come from
+    # the services.coder-nixos.initialUser option and are wired onto
+    # coder-init-admin.service below, so they stay off the long-running server.
     systemd.services.coder = {
       description = "Coder Server";
       wantedBy = [ "multi-user.target" ];
@@ -549,11 +581,10 @@ in
     };
 
     # ── Admin user bootstrap ──────────────────────────────────────────────────
-    # Reads CODER_ADMIN_* from this service's own environment (set via
-    # local.nix as systemd.services.coder-init-admin.environment), keeping the
-    # admin credentials off the long-running coder.service.
-    # Creates a local admin account once; sentinel prevents re-running.
-    # If CODER_ADMIN_EMAIL is unset, skips and directs user to the browser wizard.
+    # Creates the Coder initial (owner) user once from the
+    # services.coder-nixos.initialUser option; a sentinel prevents re-running.
+    # If initialUser.email is unset, skips and directs the user to the browser
+    # wizard.
     systemd.services.coder-init-admin = {
       description = "Coder bootstrap: create admin, mint session token, deploy templates";
       wantedBy = [ "multi-user.target" ];
@@ -561,10 +592,13 @@ in
       requires = [ "coder.service" ];
 
       # Inherit the coder.service environment so CODER_PG_CONNECTION_URL (and the
-      # other server vars) are available without duplication. The CODER_ADMIN_*
-      # credentials are merged in on top via the coder-init-admin.environment
-      # definition in hosts/<host>/local.nix (NixOS merges attrset options).
-      inherit (config.systemd.services.coder) environment;
+      # other server vars) are available without duplication, then add the
+      # initial-user credentials from the services.coder-nixos.initialUser option.
+      environment = config.systemd.services.coder.environment // {
+        INITIAL_USER_USERNAME = config.services.coder-nixos.initialUser.username;
+        INITIAL_USER_EMAIL = config.services.coder-nixos.initialUser.email;
+        INITIAL_USER_PASSWORD = config.services.coder-nixos.initialUser.password;
+      };
 
       serviceConfig = {
         Type = "oneshot";
@@ -581,8 +615,8 @@ in
           templates_sentinel=/var/lib/coder/.templates-deployed
           token_file=/etc/coder/session-token
 
-          if [ -z "''${CODER_ADMIN_EMAIL:-}" ]; then
-            echo "CODER_ADMIN_EMAIL not set, skipping bootstrap."
+          if [ -z "''${INITIAL_USER_EMAIL:-}" ]; then
+            echo "INITIAL_USER_EMAIL not set, skipping bootstrap."
             echo "Complete the first-run wizard at http://$(${pkgs.nettools}/bin/hostname -s).local:${toString coderPort}"
             exit 0
           fi
@@ -608,12 +642,12 @@ in
           if [ -f "$admin_sentinel" ]; then
             echo "Admin user already created."
           else
-            echo "Creating admin user $CODER_ADMIN_EMAIL..."
+            echo "Creating admin user $INITIAL_USER_EMAIL..."
             ${coder}/bin/coder server create-admin-user \
               --postgres-url "$CODER_PG_CONNECTION_URL" \
-              --username     "$CODER_ADMIN_USERNAME" \
-              --email        "$CODER_ADMIN_EMAIL" \
-              --password     "$CODER_ADMIN_PASSWORD"
+              --username     "$INITIAL_USER_USERNAME" \
+              --email        "$INITIAL_USER_EMAIL" \
+              --password     "$INITIAL_USER_PASSWORD"
             touch "$admin_sentinel"
           fi
 
@@ -625,7 +659,7 @@ in
             echo "Logging in as admin to mint a long-lived token..."
             SESSION=$(${pkgs.curl}/bin/curl -sf -X POST http://localhost:${toString coderPort}/api/v2/users/login \
               -H 'Content-Type: application/json' \
-              -d "{\"email\":\"$CODER_ADMIN_EMAIL\",\"password\":\"$CODER_ADMIN_PASSWORD\"}" \
+              -d "{\"email\":\"$INITIAL_USER_EMAIL\",\"password\":\"$INITIAL_USER_PASSWORD\"}" \
               | ${pkgs.jq}/bin/jq -r '.session_token')
             [ -n "$SESSION" ] && [ "$SESSION" != "null" ] \
               || { echo "Admin login failed." >&2; exit 1; }
@@ -702,9 +736,9 @@ in
       ];
       requires = [ "postgresql.service" ];
 
-      # Step 8 mints a session token using CODER_ADMIN_EMAIL/PASSWORD, so pull in
-      # the coder-init-admin environment (which itself includes the coder.service
-      # vars plus the CODER_ADMIN_* credentials from local.nix).
+      # Step 8 mints a session token using the initial user's credentials, so pull
+      # in the coder-init-admin environment (which includes the coder.service vars
+      # plus the INITIAL_USER_* credentials from the initialUser option).
       inherit (config.systemd.services.coder-init-admin) environment;
 
       serviceConfig = {
@@ -752,12 +786,12 @@ in
           echo "--- bootstrapping admin user"
           ${pkgs.systemd}/bin/systemctl start coder-init-admin.service
 
-          # 8. Mint a fresh long-lived session token using the admin creds from local.nix
+          # 8. Mint a fresh long-lived session token using the initial user's creds
           echo "--- minting session token"
           SESSION=$(${pkgs.curl}/bin/curl -sf \
             -X POST http://localhost:${toString coderPort}/api/v2/users/login \
             -H 'Content-Type: application/json' \
-            -d "{\"email\":\"''${CODER_ADMIN_EMAIL}\",\"password\":\"''${CODER_ADMIN_PASSWORD}\"}" \
+            -d "{\"email\":\"''${INITIAL_USER_EMAIL}\",\"password\":\"''${INITIAL_USER_PASSWORD}\"}" \
             | ${pkgs.jq}/bin/jq -r '.session_token')
           LONG_TOKEN=$(CODER_URL=http://localhost:${toString coderPort} CODER_SESSION_TOKEN="$SESSION" \
             ${coder}/bin/coder tokens create --name nixos-sync --lifetime 8760h)
