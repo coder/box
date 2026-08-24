@@ -820,7 +820,7 @@ echo
 echo "Coder web UI after reboot:"
 echo "  http://${HOSTNAME_ARG}.local        (port 80 redirects to the *.try.coder.app tunnel URL)"
 echo "  http://${HOSTNAME_ARG}.local:3000   (direct LAN access)"
-echo "  the *.try.coder.app URL itself is written to /etc/motd on first boot once coder.service is up"
+echo "  the *.try.coder.app URL is printed in any terminal on login (cached at /tmp/coder-access-url) once coder.service is up"
 echo
 echo "Optional after first login:"
 echo "  - Update the box:  cd /etc/nixos-repo && sudo git pull && sudo nixos-rebuild switch"

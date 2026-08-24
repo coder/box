@@ -846,54 +846,75 @@ in
           Restart = "on-failure";
           RestartSec = "10s";
           ExecStart = pkgs.writeShellScript "coder-redirect" ''
-                      set -euo pipefail
-                      CODER_LOCAL="http://localhost:3000"
+            set -euo pipefail
+            CODER_LOCAL="http://localhost:3000"
 
-                      # Wait until the Coder API is up
-                      echo "coder-redirect: waiting for Coder API..."
-                      until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
-                        sleep 5
-                      done
+            # Clear any stale access URL from a previous run; it is
+            # re-published below once the live tunnel URL is known, so
+            # terminals never show a URL from an old boot or redirect.
+            # Best-effort: never let cleanup abort the service under set -e.
+            ${pkgs.coreutils}/bin/rm -f /tmp/coder-access-url || true
 
-                      # Fetch the tunnel URL (may take a moment to establish after startup)
-                      TUNNEL_URL=""
-                      for i in $(seq 1 20); do
-                        TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
-                            -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
-                            "$CODER_LOCAL/api/v2/deployment/config" \
-                          | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
-                        if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-                          echo "coder-redirect: tunnel URL is $TUNNEL_URL"
-                          break
-                        fi
-                        echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
-                        sleep 5
-                      done
+            # Wait until the Coder API is up
+            echo "coder-redirect: waiting for Coder API..."
+            until ${pkgs.curl}/bin/curl -sf "$CODER_LOCAL/api/v2/buildinfo" > /dev/null 2>&1; do
+              sleep 5
+            done
 
-                      if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
-                        echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
-                        sleep 30
-                        exit 1
-                      fi
+            # Fetch the tunnel URL (may take a moment to establish after startup)
+            TUNNEL_URL=""
+            for i in $(seq 1 20); do
+              TUNNEL_URL=$(${pkgs.curl}/bin/curl -sf \
+                  -H "Coder-Session-Token: $(cat /etc/coder/session-token)" \
+                  "$CODER_LOCAL/api/v2/deployment/config" \
+                | ${pkgs.jq}/bin/jq -r '.config.access_url // empty' 2>/dev/null || true)
+              if echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+                echo "coder-redirect: tunnel URL is $TUNNEL_URL"
+                break
+              fi
+              echo "coder-redirect: tunnel not ready yet (attempt $i), retrying in 5s..."
+              sleep 5
+            done
 
-                      export CODER_TUNNEL_URL="$TUNNEL_URL"
+            if ! echo "$TUNNEL_URL" | grep -q "try.coder.app"; then
+              echo "coder-redirect: could not detect tunnel URL; will retry in 30s"
+              sleep 30
+              exit 1
+            fi
 
-                      # Surface the tunnel URL on every console / SSH login.
-                      HOSTNAME="$(${pkgs.nettools}/bin/hostname)"
-                      ${pkgs.coreutils}/bin/cat > /etc/motd <<EOF
+            export CODER_TUNNEL_URL="$TUNNEL_URL"
 
-              Coder is running on this box.
+            # Publish the access URL so terminals can show it on login
+            # (see environment.interactiveShellInit below). /tmp is
+            # cleared on boot and we wipe it on every (re)start above,
+            # so a stale URL is never shown; readers only cat this
+            # file, never the network. Best-effort so a /tmp write
+            # failure can't take down the redirect under set -e.
+            ${pkgs.coreutils}/bin/printf '%s\n' "$TUNNEL_URL" > /tmp/coder-access-url \
+              && ${pkgs.coreutils}/bin/chmod 0644 /tmp/coder-access-url || true
 
-                Tunnel URL:  $TUNNEL_URL
-                Local:       http://$HOSTNAME.local:3000
-                Redirect:    http://$HOSTNAME.local        (302 → tunnel)
-
-            EOF
-
-                      exec ${pkgs.python3}/bin/python3 ${redirectPy}
+            exec ${pkgs.python3}/bin/python3 ${redirectPy}
           '';
         };
       };
+
+    # ── Coder access URL login banner ─────────────────────────────────────────
+    # coder-redirect publishes the live tunnel URL to /tmp/coder-access-url once
+    # it is up (and clears it on restart). Print it on interactive shells so both
+    # a local terminal and an SSH session show where to reach Coder — the old
+    # /etc/motd only surfaced on PAM logins, never in a desktop terminal. This
+    # only reads the file; it never touches the network. The exported guard keeps
+    # nested shells from reprinting it within one session.
+    environment.interactiveShellInit = ''
+      if [ -z "''${CODER_ACCESS_URL_SHOWN:-}" ] && [ -s /tmp/coder-access-url ]; then
+        export CODER_ACCESS_URL_SHOWN=1
+        __coder_url="$(cat /tmp/coder-access-url)"
+        __coder_host="$(cat /proc/sys/kernel/hostname)"
+        printf '\n  Coder is running on this box.\n\n    Access URL:  %s\n    Local:       http://%s.local:3000\n    Redirect:    http://%s.local        (302 → Access URL)\n\n' \
+          "$__coder_url" "$__coder_host" "$__coder_host"
+        unset __coder_url __coder_host
+      fi
+    '';
 
     # ── Workspace reaper ──────────────────────────────────────────────────────────
     # Deletes workspaces that have been stopped for >= 72 h.
