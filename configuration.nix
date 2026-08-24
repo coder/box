@@ -327,10 +327,10 @@ in
     services.printing.enable = true;
 
     # ── Users ─────────────────────────────────────────────────────────────────
-    # The desktop / SSH login user is declared per-host by the generated
-    # hosts/<host>/default.nix from install-answers.json (username + initial
-    # password chosen at install time). The `coder` system user (uid 991) is
-    # shared and declared further down.
+    # The desktop / SSH login user is declared per-host in local.nix from the
+    # install-answers.json values (username + initial password chosen at install
+    # time). The `coder` system user (uid 991) is shared and declared further
+    # down.
 
     security.sudo.wheelNeedsPassword = false;
 

@@ -632,8 +632,8 @@ fi
 mkdir -p "$HOST_DIR"
 
 # default.nix: disko-standard layout, target disk override, conditional
-# local.nix, facter when present, and the install-answers.json applied to the
-# coder-nixos options.
+# local.nix, facter when present. The coder-nixos options (initial user, OS
+# login user, LAN IP) are applied by local.nix, which reads install-answers.json.
 if [[ ! -f "$HOST_DIR/default.nix" ]]; then
   cat >"$HOST_DIR/default.nix" <<NIX
 # Hardware: ${HARDWARE_DESC_ARG}.
@@ -643,12 +643,6 @@ if [[ ! -f "$HOST_DIR/default.nix" ]]; then
 
 { lib, ... }:
 
-let
-  # Install-time answers written by install.sh. Read here so the values live in
-  # data, not spliced-in source. Override any of them in local.nix (optionally
-  # from a secret via agenix/sops).
-  answers = builtins.fromJSON (builtins.readFile ./install-answers.json);
-in
 {
   imports = [ ../../installer/bootstrap/disko-standard.nix ]
     ++ lib.optional (builtins.pathExists ./local.nix) ./local.nix;
@@ -659,23 +653,13 @@ in
   # facter.json overrides hardware-detection bits of hardware-configuration.nix.
   hardware.facter.reportPath =
     lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
-
-  services.coder-nixos.lanIp = lib.mkDefault answers.lanIp;
-  services.coder-nixos.initialUser = lib.mkDefault answers.initialUser;
-
-  # Desktop / SSH login user.
-  users.users.\${answers.loginUser.username} = {
-    isNormalUser = true;
-    description = answers.loginUser.username;
-    extraGroups = [ "networkmanager" "wheel" ];
-    initialPassword = lib.mkDefault answers.loginUser.password;
-  };
 }
 NIX
   echo "  wrote hosts/$HOSTNAME_ARG/default.nix"
 fi
 
-# local.nix: user-editable overrides only (no credentials spliced in).
+# local.nix: copied verbatim from the example (no splicing). It reads
+# install-answers.json and applies the values, and holds any user overrides.
 if [[ ! -f "$HOST_DIR/local.nix" ]]; then
   cp "$REPO_DIR/installer/bootstrap/local.nix.example" "$HOST_DIR/local.nix"
   echo "  wrote hosts/$HOSTNAME_ARG/local.nix"

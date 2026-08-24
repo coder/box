@@ -220,7 +220,7 @@ sudo k3s kubectl describe pod -n coder-workspaces <pod-name>
   installer/
     bootstrap/                  # assets install.sh consumes when generating a new host
       disko-standard.nix        # shared disko config: UEFI + single-disk layout for new hosts
-      local.nix.example         # template copied to hosts/<host>/local.nix (optional overrides only)
+      local.nix.example         # template copied to hosts/<host>/local.nix; reads install-answers.json and applies the values
   nixos/
     modules/                    # NixOS service modules (services.coder-nixos.*)
       k3s/                      # base single-node k3s server

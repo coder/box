@@ -1,45 +1,53 @@
-# Per-host overrides for hosts/<host>/local.nix.
+# Per-host config for hosts/<host>/local.nix.
 #
-# Usage:
-#   cp installer/bootstrap/local.nix.example hosts/<host-folder>/local.nix
-#   $EDITOR hosts/<host-folder>/local.nix
-#   sudo git add --intent-to-add -f hosts/<host-folder>/local.nix
+# install.sh copies this file to hosts/<host>/local.nix and writes the
+# install-time answers (Coder initial user, OS login user, LAN IP) to
+# hosts/<host>/install-answers.json. The block below reads that JSON and applies
+# the values, so a freshly installed host is configured straight from its
+# answers file.
+#
+# Everything is a plain NixOS option, so you can edit the values here, point them
+# at a secret manager (agenix/sops), or drop the install-answers.json read
+# entirely. The optional extras further down are commented out by default.
+#
+# After editing:
+#   sudo git -C /etc/nixos-repo add --intent-to-add -f hosts/<host>/local.nix
 #   sudo nixos-rebuild switch
-#
-# install.sh writes the install-time answers (Coder initial user, OS login user,
-# LAN IP) to hosts/<host>/install-answers.json and the generated default.nix
-# applies them. This file is only for optional per-host tweaks and overrides;
-# everything below is commented out by default.
-#
-# The credential options (services.coder-nixos.initialUser / loginUser) are plain
-# NixOS strings, so you can override them here or point them at a secret manager
-# (agenix/sops) instead of keeping plaintext in install-answers.json.
 #
 # Hostname comes from flake.nix's mkHost; override with `lib.mkForce` if needed.
 
-{ ... }:
+{ lib, ... }:
 
+let
+  # Install-time answers written by install.sh. Applied at mkDefault so any
+  # override below (or in another module) wins.
+  answers = builtins.fromJSON (builtins.readFile ./install-answers.json);
+in
 {
-  # ── LAN IP (optional) ───────────────────────────────────────────────────────
-  # Primary LAN IP so workspace pods reach the Coder server directly (bypasses
-  # mDNS). Leave unset to fall back to http://<hostname>.local:3000.
-  # services.coder-nixos.lanIp = "192.168.x.x";
+  # ── Values from install-answers.json ────────────────────────────────────────
+  services.coder-nixos.lanIp = lib.mkDefault answers.lanIp;
+  services.coder-nixos.initialUser = lib.mkDefault answers.initialUser;
+
+  # Desktop / SSH login user. Change the password with `passwd <user>` after
+  # first boot; initialPassword only fires on user creation.
+  users.users.${answers.loginUser.username} = {
+    isNormalUser = true;
+    description = answers.loginUser.username;
+    extraGroups = [
+      "networkmanager"
+      "wheel"
+    ];
+    initialPassword = lib.mkDefault answers.loginUser.password;
+  };
 
   # ── Coder initial user (optional override) ──────────────────────────────────
-  # Set at install time from install-answers.json. Override the initial owner's
-  # credentials here, or wire them to a secret. An empty email skips the
-  # bootstrap and leaves the browser first-run wizard to create the user.
+  # Overrides the value read from install-answers.json above. An empty email
+  # skips the bootstrap and leaves the browser first-run wizard to create the user.
   # services.coder-nixos.initialUser = {
   #   username = "admin";
   #   email    = "you@example.com";
   #   password = "changeme";
   # };
-
-  # ── OS login user (optional override) ───────────────────────────────────────
-  # Declared by the generated default.nix from install-answers.json. Change the
-  # password with `passwd <user>` after first boot; initialPassword only fires on
-  # user creation.
-  # users.users.coderbox.initialPassword = "changeme";
 
   # ── GitHub OAuth (optional) ────────────────────────────────────────────────
   # Read by the long-running coder.service. Leave commented to use the built-in
