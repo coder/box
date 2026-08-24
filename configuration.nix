@@ -392,6 +392,14 @@ in
       "flakes"
     ];
     nix.settings.download-buffer-size = 268435456; # 256 MiB; quiets the "buffer full" warning on big closure pulls
+
+    # Extra binary cache: pull community-built closures (disko and other
+    # nix-community derivations) instead of building them locally. `extra-`
+    # appends to the defaults, so cache.nixos.org stays in place.
+    nix.settings.extra-substituters = [ "https://nix-community.cachix.org" ];
+    nix.settings.extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
     networking.firewall.enable = false;
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
