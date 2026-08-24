@@ -79,18 +79,14 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Cache Nix store
-        uses: nix-community/cache-nix-action@v6
+      # Install Nix natively + cache the /nix/store. The flake check builds
+      # nothing, so it gets its own smaller cache (distinct prefix + gc cap) so
+      # it doesn't share an entry with the large image builds.
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
         with:
-          # Key on the lockfile + all Nix sources; restore the most recent
-          # arch-matching cache otherwise. Cap the saved store so a run can't
-          # blow past the repo's GitHub Actions cache budget.
-          primary-key: nix-flake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
-          restore-prefixes-first-match: nix-flake-${{ runner.os }}-${{ runner.arch }}-
-          gc-max-store-size-linux: 5G
+          cache-key-prefix: nix-flake
+          gc-max-store-size: 5G
 
       - name: Flake check
         run: make check
@@ -146,22 +142,19 @@ jobs:
     name: Build ${{ needs.plan.outputs.kinds }} (${{ matrix.system }})
     runs-on: ${{ matrix.runner }}
     env:
-      # Resolved per-kind plan from the `plan` job. Steps below branch on these.
+      # Resolved per-kind plan from the `plan` job. Steps below (the build-plan
+      # summary + the per-kind build/upload gating) branch on these. The
+      # build-iso action instead receives the plan per kind via its `full` input.
+      #
+      # PR title/number + branch are passed straight to the build-iso action's
+      # inputs (pr-title / pr-number / branch): the title + number are woven into
+      # the image's pretty version name (coderBox.prTitle / coderBox.prNumber),
+      # and the branch feeds the boot-screen "<short-sha>@<branch>" stamp
+      # (github.head_ref is the real source branch on PRs — a PR checkout is a
+      # detached HEAD — and empty otherwise so the Makefile falls back to the
+      # local branch name; tag/main builds keep their plain names).
       INSTALLER_FULL: ${{ needs.plan.outputs.installer_full }}
       APPLIANCE_FULL: ${{ needs.plan.outputs.appliance_full }}
-      # PR title + number woven into the image's pretty version name (boot-menu
-      # label + ISO file name) via coderBox.prTitle / coderBox.prNumber. Set
-      # through `env:` (not inlined into a run script) so an arbitrary title
-      # can't break the shell, and empty for non-PR events so tag/main builds
-      # keep their plain names.
-      CODER_BOX_PR_TITLE: ${{ github.event.pull_request.title }}
-      CODER_BOX_PR_NUMBER: ${{ github.event.pull_request.number }}
-      # Branch name for the boot-screen label's "<short-sha>@<branch>" stamp. A
-      # PR checkout is a detached HEAD (so the Makefile's `git rev-parse
-      # --abbrev-ref HEAD` would say "HEAD"); github.head_ref is the real source
-      # branch on pull_request events and empty otherwise (the Makefile then
-      # falls back to the local branch name).
-      CODER_BOX_BRANCH: ${{ github.head_ref }}
     strategy:
       fail-fast: false
       matrix:
@@ -178,62 +171,55 @@ jobs:
           # dispatch to build an arbitrary commit.
           ref: ${{ github.event.inputs.ref }}
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+      # Install Nix natively + cache the /nix/store (shared with the release
+      # workflow so both build images the exact same way).
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
 
-      - name: Cache Nix store
-        uses: nix-community/cache-nix-action@v6
-        with:
-          # ISO closures are large; cap the saved store so a build can't blow
-          # past the repo's GitHub Actions cache budget (10G total).
-          primary-key: nix-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', '**/*.nix') }}
-          restore-prefixes-first-match: nix-images-${{ runner.os }}-${{ runner.arch }}-
-          gc-max-store-size-linux: 8G
-
-      # Per-kind plan (full ISO vs drv only) is in the job name; the run summary
-      # below also records it. INSTALLER_FULL / APPLIANCE_FULL come from the
-      # job-level env above.
-      - name: Build images
+      # Record the per-kind plan (full ISO vs drv only, in the job name too) in
+      # the run summary, and stage one dist dir that both kinds' builds collect
+      # into so the size/upload steps below have a single place to look.
+      # INSTALLER_FULL / APPLIANCE_FULL come from the job-level env above.
+      - name: Build plan
         id: build
-        env:
-          # These are verification images, not shipped artifacts, so trade ISO
-          # size for build speed: a low squashfs compression level is far faster
-          # than the nixpkgs default (zstd level 19), which otherwise dominates
-          # the build — and the rev baked into /etc forces that recompress on
-          # every commit regardless of caching. Releases keep the slow default.
-          ISO_COMPRESSION: zstd -Xcompression-level 3
         run: |
-          # Record the per-kind plan in the run summary for quick scanning.
           plan() { [ "$1" = "true" ] && echo "full ISO" || echo "derivation only"; }
           {
             echo "### Build plan (${{ matrix.system }})"
             echo "- installer: $(plan "$INSTALLER_FULL")"
             echo "- appliance: $(plan "$APPLIANCE_FULL")"
           } >>"$GITHUB_STEP_SUMMARY"
+          echo "dist=$(mktemp -d)" >>"$GITHUB_OUTPUT"
 
-          # Nix is on the host now, so make/git (preinstalled on the runner)
-          # build straight into the host /nix/store — no container. A full build
-          # → make <kind>/iso, then dereference the image + its .sha256 sidecar
-          # (colocated in out/<kind>-iso/iso) into a real dir for upload; a
-          # drv-only kind just instantiates. Bare target → native currentSystem.
-          dist="$(mktemp -d)"
-          echo "dist=$dist" >>"$GITHUB_OUTPUT"
-          # Nix is on the host (make/git preinstalled on the runner) so the
-          # build goes straight into the host /nix/store — no container. The
-          # job-level CODER_BOX_PR_TITLE / CODER_BOX_PR_NUMBER env is inherited
-          # by make directly (read under --impure for the pretty version name).
-          build_kind() {
-            kind="$1"; full="$2"
-            if [ "$full" = "true" ]; then
-              make "$kind/iso"
-              cp -L "out/$kind-iso/iso"/* "$dist/"
-            else
-              make "$kind/drv"
-            fi
-          }
-          build_kind installer "$INSTALLER_FULL"
-          build_kind appliance "$APPLIANCE_FULL"
-          ls -lh "$dist"
+      # Build each kind through the shared action (same as the release workflow).
+      # These are verification images, not shipped artifacts, so trade ISO size
+      # for build speed via ISO_COMPRESSION: a low squashfs compression level is
+      # far faster than the nixpkgs default (zstd level 19), which otherwise
+      # dominates the build — and the rev baked into /etc forces that recompress
+      # on every commit regardless of caching. Releases keep the slow default.
+      # Both kinds collect into the one staged dist dir; a drv-only kind
+      # (full=false) instantiates without adding an ISO.
+      - name: Build installer
+        uses: ./.github/actions/build-iso
+        with:
+          target: installer
+          full: ${{ env.INSTALLER_FULL }}
+          dist: ${{ steps.build.outputs.dist }}
+          iso-compression: zstd -Xcompression-level 3
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-number: ${{ github.event.pull_request.number }}
+          branch: ${{ github.head_ref }}
+
+      - name: Build appliance
+        uses: ./.github/actions/build-iso
+        with:
+          target: appliance
+          full: ${{ env.APPLIANCE_FULL }}
+          dist: ${{ steps.build.outputs.dist }}
+          iso-compression: zstd -Xcompression-level 3
+          pr-title: ${{ github.event.pull_request.title }}
+          pr-number: ${{ github.event.pull_request.number }}
+          branch: ${{ github.head_ref }}
 
       # Record the exact byte size of every ISO this arch actually built, one
       # TSV row per ISO (system, filename, bytes). The iso-table job downloads
