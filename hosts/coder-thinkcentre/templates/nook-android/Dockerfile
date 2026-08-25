@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage 2: native AMD64 JVM for fast compilation + x86/x86_64 ADT tools via binfmt QEMU
-FROM eclipse-temurin:8-jdk
+FROM eclipse-temurin:25-jdk
 
 ENV DEBIAN_FRONTEND=noninteractive
 
