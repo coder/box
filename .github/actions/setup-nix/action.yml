@@ -34,7 +34,7 @@ runs:
       uses: DeterminateSystems/nix-installer-action@main
 
     - name: Cache Nix store
-      uses: nix-community/cache-nix-action@v6
+      uses: nix-community/cache-nix-action@v7
       with:
         # Key on the lockfile + all Nix sources; restore the most recent
         # arch-matching cache otherwise.

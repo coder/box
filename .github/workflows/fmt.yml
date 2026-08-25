@@ -38,7 +38,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Cache Nix store
-        uses: nix-community/cache-nix-action@v6
+        uses: nix-community/cache-nix-action@v7
         with:
           # Formatting/linting tools (treefmt, statix, …) come from the flake;
           # key on the lockfile + Nix sources so the tool closure is reused.
@@ -62,7 +62,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@main
 
       - name: Cache Nix store
-        uses: nix-community/cache-nix-action@v6
+        uses: nix-community/cache-nix-action@v7
         with:
           # Same tool closure as the format job; key on the lockfile + Nix
           # sources so it is reused across runs.
