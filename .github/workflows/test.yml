@@ -237,7 +237,7 @@ jobs:
       # filenames keep them from clashing.
       - name: Upload ISO size metadata
         if: env.INSTALLER_FULL == 'true' || env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: iso-meta-${{ matrix.system }}
           path: ${{ steps.build.outputs.dist }}/iso-sizes-*.tsv
@@ -251,7 +251,7 @@ jobs:
       # downloaded on its own. Each step runs only when its kind built full.
       - name: Upload installer ISO artifact
         if: env.INSTALLER_FULL == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coder-box-installer-${{ matrix.system }}
           path: |
@@ -263,7 +263,7 @@ jobs:
 
       - name: Upload appliance ISO artifact
         if: env.APPLIANCE_FULL == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coder-box-appliance-${{ matrix.system }}
           path: |
@@ -297,7 +297,7 @@ jobs:
       # Pull every arch's per-target size TSVs into one dir (filenames are
       # target+system-suffixed, so merge-multiple can't clash).
       - name: Download ISO size metadata
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: meta
           pattern: iso-meta-*
