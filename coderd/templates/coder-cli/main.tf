@@ -174,7 +174,7 @@ module "code-server" {
 module "claude-code" {
   count    = data.coder_workspace.me.start_count != 0 && data.coder_parameter.enable_claude_code.value ? 1 : 0
   source   = "registry.coder.com/coder/claude-code/coder"
-  version  = "5.1.0"
+  version  = "5.4.1"
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/projects"
 }
