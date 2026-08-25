@@ -52,7 +52,7 @@ runs:
   steps:
     - name: Render ISO table
       id: render
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       env:
         META_DIR: ${{ inputs.meta-dir }}
         EXPIRY_DAYS: ${{ inputs.expiry-days }}
