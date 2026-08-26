@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref }}
 
@@ -165,7 +165,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # Empty for push/PR (checks out the event ref); honored for manual
           # dispatch to build an arbitrary commit.
@@ -292,7 +292,7 @@ jobs:
     steps:
       # Checkout so the local iso-table composite action is available.
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Pull every arch's per-target size TSVs into one dir (filenames are
       # target+system-suffixed, so merge-multiple can't clash).
