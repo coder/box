@@ -77,7 +77,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # Empty for tag push (checks out the tag); honored for manual dispatch
           # to release an arbitrary commit.
@@ -140,7 +140,7 @@ jobs:
     steps:
       # Checkout so the local iso-table composite action is available.
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref }}
 
