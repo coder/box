@@ -166,7 +166,7 @@ module "git-clone" {
 module "code-server" {
   count    = data.coder_workspace.me.start_count
   source   = "registry.coder.com/coder/code-server/coder"
-  version  = "1.4.4"
+  version  = "1.5.2"
   agent_id = coder_agent.main.id
   folder   = "/home/coder/projects"
 }
